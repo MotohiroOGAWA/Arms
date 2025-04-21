@@ -8,10 +8,11 @@ from typing import Tuple
 import re
 import dill
 
+from MassSpectrum import MassSpectrum
 from item_parser import ItemParser
     
 
-def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) -> pd.DataFrame:
+def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) -> MassSpectrum:
     file_size = os.path.getsize(filepath)
     processed_size = 0
     line_count = 1
@@ -130,92 +131,11 @@ def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) ->
         now = datetime.now().strftime("%Y%m%d%H%M%S")
         with open(os.path.splitext(filepath)[0] + f"_error_{now}.txt", "w") as f:
             f.write(error_text)
-            
-    return df
-
-def extract_peaks(msp_df, indices) -> Tuple[np.ndarray]:
-    """
-    Extracts mass spectral peaks from an MSP DataFrame for multiple rows.
-
-    Parameters:
-        msp_df (pandas.DataFrame): A DataFrame containing mass spectral data, 
-                                   where the "Peak" column stores peak information as strings.
-                                   Each string contains peaks formatted as "mz,intensity;...".
-        indices (list, np.ndarray, tuple): A list, numpy array, or tuple of integer indices specifying 
-                                           the rows to extract peaks from.
-
-    Returns:
-        tuple[np.ndarray]: A tuple of numpy arrays, where each array contains the peaks for a specific row.
-                           Each array is a 2D array with shape (n, 2), where n is the number of peaks
-                           and each row contains [mz, intensity].
-
-    Raises:
-        ValueError: If `indices` is not a list, numpy array, or tuple of integers.
-    """
-    if isinstance(indices, (list, np.ndarray, tuple)):
-        peaks = []
-        for i in indices:
-            peak_str = msp_df.loc[i, "Peak"]
-            peak = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
-            peaks.append(peak)
-        return tuple(peaks)
-    else:
-        raise ValueError("indices must be a list/np.ndarray/tuple of int.")
     
-def extract_peak(msp_df, idx) -> np.ndarray:
-    """
-    Extracts mass spectral peaks from an MSP DataFrame for a single row.
+    mass_spectrum = MassSpectrum(df)
+    return mass_spectrum
 
-    Parameters:
-        msp_df (pandas.DataFrame): A DataFrame containing mass spectral data, 
-                                   where the "Peak" column stores peak information as strings.
-                                   Each string contains peaks formatted as "mz,intensity;...".
-        idx (int): An integer index specifying the row to extract peaks from.
 
-    Returns:
-        np.ndarray: A numpy array containing the peaks for the specified row.
-                    The array is a 2D array with shape (n, 2), where n is the number of peaks,
-                    and each row contains [mz, intensity].
-
-    Raises:
-        ValueError: If `idx` is not an integer.
-    """
-    if isinstance(idx, (int, np.integer)):  # Single index
-        peak_str = msp_df.loc[idx, "Peak"]
-        peak = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
-        return peak
-    else:
-        raise ValueError("idx must be an int.")
-
-def save_msp_data(metadata_df:pd.DataFrame, save_file:str, overwrite=True) -> None:
-    # Check if the directory already exists and handle overwrite option
-    if not overwrite and os.path.exists(save_file):
-        raise FileExistsError(f"Directory '{save_file}' already exists. Set overwrite=True to overwrite the directory.")
-    
-    # Create the directory if it doesn't exist
-    if not os.path.exists(os.path.dirname(save_file)):
-        os.makedirs(os.path.dirname(save_file))
-
-    # Save metadata as parquet file
-    if save_file.endswith(".parquet"):
-        metadata_df.to_parquet(save_file, index=False)
-        print(f"peak data saved to '{save_file}'(parquet).")
-    elif save_file.endswith(".tsv") or save_file.endswith(".txt"):
-        metadata_df.to_csv(save_file, index=False, sep='\t')
-        print(f"peak data saved to '{save_file}'(tsv).")
-    else:
-        raise ValueError(f"Unsupported file format for saving: '{save_file}'.")
-
-def load_msp_data(load_file:str) -> pd.DataFrame:
-    if load_file.endswith(".parquet"):
-        metadata_df = pd.read_parquet(load_file)
-        print(f"peak data loaded from '{load_file}'(parquet).")
-    elif load_file.endswith(".tsv") or load_file.endswith(".txt"):
-        metadata_df = pd.read_csv(load_file, sep='\t')
-        print(f"peak data loaded from '{load_file}'(tsv).")
-    else:
-        raise ValueError(f"Unsupported file format for loading: '{load_file}'.")
-    return metadata_df
     
 
 def normalize_column(value:str) -> str:
