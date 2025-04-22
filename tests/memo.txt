@@ -1,0 +1,1 @@
+cd ~/workspace/mnt/app ; python -m unittest discover -s tests -t ~/workspace/mnt/app -p "*.py"
