@@ -8,8 +8,8 @@ from typing import Tuple
 import re
 import dill
 
-from MassSpectrum import MassSpectrum
-from item_parser import ItemParser
+from ..ms.MassSpectrum import MassSpectrum
+from .item_parser import ItemParser
     
 
 def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) -> MassSpectrum:
@@ -120,12 +120,6 @@ def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) ->
 
     df['IdxOri'] = df.index
 
-    if save_file is not None:
-        try:
-            save_msp_data(df, save_file, overwrite=overwrite)
-        except FileExistsError as e:
-            warnings.warn(str(e))
-
     if error_text != '':
         from datetime import datetime
         now = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -133,6 +127,10 @@ def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) ->
             f.write(error_text)
     
     mass_spectrum = MassSpectrum(df)
+
+    if save_file is not None:
+        mass_spectrum.save(save_file, overwrite=overwrite)
+
     return mass_spectrum
 
 

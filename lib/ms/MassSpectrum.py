@@ -6,6 +6,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from .Peak import Peak
+
 class MassSpectrum:
     def __init__(self, peak_df):
         assert isinstance(peak_df, pd.DataFrame), "peak_df must be a pandas DataFrame"
@@ -19,16 +21,17 @@ class MassSpectrum:
         return len(self._df)
     
 
-    def extract_peaks(self, indices) -> Tuple[np.ndarray]:
+    def extract_peaks(self, indices, normalize: bool = False) -> Tuple[Peak]:
         """
         Extracts mass spectral peaks from an MSP DataFrame for multiple rows.
 
         Parameters:
             indices (list, np.ndarray, tuple): A list, numpy array, or tuple of integer indices specifying 
                                             the rows to extract peaks from.
+            normalize (bool): If True, normalize the intensity values to a maximum of 1.0.
 
         Returns:
-            tuple[np.ndarray]: A tuple of numpy arrays, where each array contains the peaks for a specific row.
+            tuple[Peak]: A tuple of numpy arrays, where each array contains the peaks for a specific row.
                             Each array is a 2D array with shape (n, 2), where n is the number of peaks
                             and each row contains [mz, intensity].
 
@@ -38,22 +41,22 @@ class MassSpectrum:
         if isinstance(indices, (list, np.ndarray, tuple)):
             peaks = []
             for i in indices:
-                peak_str = self._df.loc[i, "Peak"]
-                peak = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
-                peaks.append(peak)
+                _peak = self.extract_peak(i, normalize=normalize)
+                peaks.append(_peak)
             return tuple(peaks)
         else:
             raise ValueError("indices must be a list/np.ndarray/tuple of int.")
         
-    def extract_peak(self, idx) -> np.ndarray:
+    def extract_peak(self, idx, normalize: bool = False) -> Peak:
         """
         Extracts mass spectral peaks from an MSP DataFrame for a single row.
 
         Parameters:
             idx (int): An integer index specifying the row to extract peaks from.
+            normalize (bool): If True, normalize the intensity values to a maximum of 1.0.
 
         Returns:
-            np.ndarray: A numpy array containing the peaks for the specified row.
+            Peak: A numpy array containing the peaks for the specified row.
                         The array is a 2D array with shape (n, 2), where n is the number of peaks,
                         and each row contains [mz, intensity].
 
@@ -63,6 +66,7 @@ class MassSpectrum:
         if isinstance(idx, (int, np.integer)):  # Single index
             peak_str = self._df.loc[idx, "Peak"]
             peak = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
+            peak = Peak(peak, normalize=normalize)
             return peak
         else:
             raise ValueError("idx must be an int.")
