@@ -22,7 +22,7 @@ class Peak:
         """
         assert isinstance(data, np.ndarray), "data must be a NumPy array"
         assert data.ndim == 2 and data.shape[1] == 2, "data must have shape (n, 2)"
-        self.data = data
+        self.data: np.ndarray = data
         if normalize:
             self.normalize_intensity()
 
@@ -40,6 +40,37 @@ class Peak:
             np.ndarray: The peak data array with shape (n_peaks, 2).
         """
         return self.data
+    
+    def __getattr__(self, name):
+        """
+        Allow dynamic attribute access for numpy array methods.
+        """
+        return getattr(self.data, name)
+
+    def __getitem__(self, key):
+        """
+        Allows indexing and slicing like a numpy array.
+        """
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        """
+        Allows setting values like a numpy array.
+        """
+        self.data[key] = value
+
+    def __iter__(self):
+        """
+        Allows iteration over the peaks.
+        """
+        return iter(self.data)
+
+    def __array__(self):
+        """
+        Allows automatic conversion to a numpy array when needed.
+        """
+        return self.data
+
 
     def normalize_intensity(self, to: float = 1.0) -> None:
         """
