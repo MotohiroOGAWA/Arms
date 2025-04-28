@@ -19,7 +19,27 @@ class MassSpectrum:
 
     def __len__(self):
         return len(self._df)
+
+    def __getattr__(self, name):
+        return getattr(self._df, name)
     
+    def __getitem__(self, key):
+        return self._df[key]
+
+    def __setitem__(self, key, value):
+        self._df[key] = value
+
+    def __delitem__(self, key):
+        del self._df[key]
+
+    def __contains__(self, item):
+        return item in self._df
+    
+    def __iter__(self):
+        return iter(self._df)
+    
+    def __dir__(self):
+        return list(super().__dir__()) + list(self._df.__dir__())
 
     def extract_peaks(self, indices, normalize: bool = False) -> Tuple[Peak]:
         """
