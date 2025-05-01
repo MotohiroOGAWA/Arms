@@ -45,13 +45,61 @@ class ItemParser:
 
     @classmethod
     def _normalize_adduct_type(cls, value: str) -> str:
-        match = re.match(r"\[(.*?)\]", value)
-        normal_name = match.group(1) if match else value
+        core_match = re.match(r"\[(.*?)\]", value)
+        
+        if not core_match:
+            return value.replace(" ", "").strip()
+        
+        core = core_match.group(1)
+
+        charge_match = re.search(r"\](\d*[+-]+)$", value)
+        if not charge_match:
+            charge_match = re.search(r"\](.*)$", value)
+            charge = charge_match.group(1).strip()
+        else:
+            raw = charge_match.group(1).strip()
+
+            try:
+                # Exapmple: "++" → +2, "--" → -2
+                if all(c == "+" for c in raw):
+                    charge = len(raw)
+                elif all(c == "-" for c in raw):
+                    charge = -len(raw)
+                elif raw[-1] == "+":
+                    charge = int(raw[:-1]) if raw[:-1].isdigit() else 1
+                elif raw[-1] == "-":
+                    charge = -int(raw[:-1]) if raw[:-1].isdigit() else -1
+                else:
+                    charge = None
+            except ValueError:
+                charge = None
+            
+            if charge is None:
+                charge = raw
+            elif charge == 0:
+                charge = ''
+            elif charge == 1:
+                charge = '+'
+            elif charge == -1:
+                charge = '-'
+            elif charge > 1:
+                charge = str(charge) + '+'
+            elif charge < -1:
+                charge = str(-charge) + '-'
+            else:
+                charge = raw
+
+        normal_name = f"[{core}]{charge}"
+            
         return normal_name.replace(" ", "").strip()
 
     @classmethod
     def _initialize(cls):
-        # キーの正準化辞書
+        """
+        Initialize the class by creating
+        a mapping of canonical keys to their aliases.
+        """
+        # Create a mapping of canonical keys to their aliases
         for canonical_key, aliases in cls.column_aliases.items():
             normalized = cls._normalize_key(canonical_key)
             cls._to_canonical_key[normalized] = canonical_key
@@ -59,7 +107,7 @@ class ItemParser:
                 normalized_alias = cls._normalize_key(alias)
                 cls._to_canonical_key.setdefault(normalized_alias, canonical_key)
 
-        # アダクトタイプの正準化辞書（キー名には追加しない）
+        # Create a mapping of canonical adduct types to their aliases
         for canonical_adduct, aliases in cls.adduct_type_aliases.items():
             normalized = cls._normalize_adduct_type(canonical_adduct)
             cls._to_canonical_adduct_type[normalized] = canonical_adduct
@@ -80,8 +128,7 @@ class ItemParser:
     def to_canonical_adduct_type(cls, adduct_type: str) -> str:
         normalized_adduct_type = cls._normalize_adduct_type(adduct_type)
         if normalized_adduct_type not in cls._to_canonical_adduct_type:
-            capitalized_adduct_type = cls.capitalize(adduct_type)
-            cls._to_canonical_adduct_type[normalized_adduct_type] = capitalized_adduct_type
+            cls._to_canonical_adduct_type[normalized_adduct_type] = normalized_adduct_type
         
         return cls._to_canonical_adduct_type[normalized_adduct_type]
 
