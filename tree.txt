@@ -1,0 +1,69 @@
+|++SMILES  : CC(=CCNc1nc[nH]c2ncnc1-2)CO / [M]
+|++SMILES  : CC(=CCNc1nc[nH]c2ncnc1-2)CO
+|++EM      : 219.1120
+|++Formula : C10H13N5O
+|- Bond: BondPosition(), Adduct: None
+   |++SMILES  : CC(=CCNc1nc[nH]c2ncnc1-2)CO / [M+H]+
+   |++SMILES  : CC(=CCNc1nc[nH]c2ncnc1-2)CO
+   |++m/z     : 220.1198
+   |++Formula : C10H14N5O+
+   |- Bond: BondPosition(0,), Adduct: [M+H]+
+      |++SMILES  : [1*]C / [F]+
+      |++SMILES  : [CH3+]
+      |++m/z     : 15.0235
+      |++Formula : CH3+
+   |- Bond: BondPosition(0,), Adduct: [M+H]+
+      |++SMILES  : *C(=CCNc1nc[nH]c2ncnc1-2)CO / [F]+
+      |++SMILES  : OC[C+]=CCNc1c2ncnc-2[nH]cn1
+      |++m/z     : 204.0885
+      |++Formula : C9H10N5O+
+   |- Bond: BondPosition(2,), Adduct: [M+H]+
+      |++SMILES  : [3*]C=C(C)CO / [F]+
+      |++SMILES  : [CH+]=C(C)CO
+      |++m/z     : 71.0497
+      |++Formula : C4H7O+
+   |- Bond: BondPosition(2,), Adduct: [M+H]+
+      |++SMILES  : [2*]CNc1nc[nH]c2ncnc1-2 / [F]+
+      |++SMILES  : [CH2+]Nc1c2ncnc-2[nH]cn1
+      |++m/z     : 148.0623
+      |++Formula : C6H6N5+
+   |- Bond: BondPosition(3,), Adduct: [M+H]+
+      |++SMILES  : [4*]CC=C(C)CO / [F]+
+      |++SMILES  : [CH2+]C=C(C)CO
+      |++m/z     : 85.0653
+      |++Formula : C5H9O+
+   |- Bond: BondPosition(3,), Adduct: [M+H]+
+      |++SMILES  : [3*]Nc1nc[nH]c2ncnc1-2 / [F+2H]+
+      |++SMILES  : Nc1c2ncnc-2[nH]cn1
+      |++m/z     : 136.0623
+      |++Formula : C5H6N5+
+   |- Bond: BondPosition(4,), Adduct: [M+H]+
+      |++SMILES  : [5*]NCC=C(C)CO / [F+2H]+
+      |++SMILES  : CC(=CCN)CO
+      |++m/z     : 102.0919
+      |++Formula : C5H12NO+
+   |- Bond: BondPosition(4,), Adduct: [M+H]+
+      |++SMILES  : [4*]c1nc[nH]c2ncnc1-2 / [F]+
+      |++SMILES  : [c+]1nc[nH]c2ncnc1-2
+      |++m/z     : 119.0358
+      |++Formula : C5H3N4+
+   |- Bond: BondPosition(13,), Adduct: [M+H]+
+      |++SMILES  : [14*]C(C)=CCNc1nc[nH]c2ncnc1-2 / [F]+
+      |++SMILES  : C[C+]=CCNc1c2ncnc-2[nH]cn1
+      |++m/z     : 188.0936
+      |++Formula : C9H10N5+
+   |- Bond: BondPosition(13,), Adduct: [M+H]+
+      |++SMILES  : [1*]CO / [F]+
+      |++SMILES  : [CH2+]O
+      |++m/z     : 31.0184
+      |++Formula : CH3O+
+   |- Bond: BondPosition(14,), Adduct: [M+H]+
+      |++SMILES  : [15*]CC(C)=CCNc1nc[nH]c2ncnc1-2 / [F]+
+      |++SMILES  : [CH2+]C(C)=CCNc1c2ncnc-2[nH]cn1
+      |++m/z     : 202.1093
+      |++Formula : C10H12N5+
+   |- Bond: BondPosition(14,), Adduct: [M+H]+
+      |++SMILES  : [14*]O / [F+2H]+
+      |++SMILES  : O
+      |++m/z     : 19.0184
+      |++Formula : H3O+

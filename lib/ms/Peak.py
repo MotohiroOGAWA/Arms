@@ -87,7 +87,13 @@ class Peak:
         if max_intensity > 0:
             self.data[:, 1] = self.data[:, 1] / max_intensity * to
 
-    # Future expansion:
-    # def assign_formulas(self, formula_list: list[str]):
-    #     assert len(formula_list) == len(self), "Number of formulas must match number of peaks."
-    #     self.formulas = formula_list
+    @property
+    def is_int_mz(self) -> bool:
+        """
+        Check if all m/z values are integers.
+
+        Returns:
+            bool: True if all m/z values are integers, False otherwise.
+        """
+        all_integers = np.all(self.data[:, 0] % 1 == 0)
+        return all_integers
