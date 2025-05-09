@@ -21,10 +21,16 @@ class MassSpectrum:
         return len(self._df)
 
     def __getattr__(self, name):
-        return getattr(self._df, name)
+        res = getattr(self._df, name)
+        if isinstance(res, pd.DataFrame):
+            return MassSpectrum(res)
+        return res
     
     def __getitem__(self, key):
-        return self._df[key]
+        res = self._df[key]
+        if isinstance(res, pd.DataFrame):
+            return MassSpectrum(res)
+        return res
 
     def __setitem__(self, key, value):
         self._df[key] = value
