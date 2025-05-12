@@ -20,14 +20,15 @@ class TestMspReader(unittest.TestCase):
         """
         Test whether peaks can be correctly extracted from multiple indices.
         """
-        peaks = self.mass_spectra.extract_peaks([6, 7])
+        peaks = self.mass_spectra[6:8]
+        peaks = self.mass_spectra[[6,7]]
         
         # Check if exactly two peak arrays are returned
         self.assertEqual(len(peaks), 2, "Expected 2 sets of peaks to be extracted.")
 
         # Check if each returned peak array has shape (n, 2)
         for peak in peaks:
-            self.assertEqual(peak.data.shape[1], 2, "Each peak must have shape (_, 2).")
+            self.assertEqual(peak.Peak.shape[1], 2, "Each peak must have shape (_, 2).")
 
 if __name__ == "__main__":
     # cd ~/workspace/mnt/app ; python -m unittest tests.lib.io.test_msp_reader
