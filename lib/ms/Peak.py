@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import numpy as np
+from typing import Dict, Tuple
 
 
 class Peak:
@@ -9,7 +12,7 @@ class Peak:
     of shape (n_peaks, 2).
     """
 
-    def __init__(self, data: np.ndarray, normalize: bool = False):
+    def __init__(self, data: Dict, normalize: bool = False):
         """
         Initialize the Peak object with peak data.
 
@@ -20,56 +23,61 @@ class Peak:
         Raises:
             AssertionError: If data is not a 2D array or does not have shape (n, 2).
         """
-        assert isinstance(data, np.ndarray), "data must be a NumPy array"
-        assert data.ndim == 2 and data.shape[1] == 2, "data must have shape (n, 2)"
-        self.data: np.ndarray = data
+        assert isinstance(data, dict), "data must be a dictionary"
+        assert "Peak" in data, "data must contain a 'Peak' key"
+        peak_str = data['Peak']
+        self._peak = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
+        self._data = self._peak
         if normalize:
             self.normalize_intensity()
 
     def __len__(self) -> int:
-        return self.data.shape[0]
+        return self._peak.shape[0]
+    
+    def __str__(self) -> str:
+        return self.format_peak()
 
     def __repr__(self) -> str:
-        return f"{self.data}"
-    
-    def __call__(self) -> np.ndarray:
-        """
-        When the instance is called like a function, return the peak data.
-
-        Returns:
-            np.ndarray: The peak data array with shape (n_peaks, 2).
-        """
-        return self.data
+        return str(self)
     
     def __getattr__(self, name):
         """
         Allow dynamic attribute access for numpy array methods.
         """
-        return getattr(self.data, name)
-
-    def __getitem__(self, key):
+        if name == 'Peak':
+            return self._peak
+        return getattr(self._data, name)
+    
+    def __getitem__(self, index: int) -> PeakEntry:
         """
-        Allows indexing and slicing like a numpy array.
+        Return a PeakEntry at the given index.
         """
-        return self.data[key]
-
-    def __setitem__(self, key, value):
-        """
-        Allows setting values like a numpy array.
-        """
-        self.data[key] = value
-
+        mz, intensity = self._peak[index]
+        return PeakEntry(mz, intensity)
+    
     def __iter__(self):
         """
-        Allows iteration over the peaks.
+        Iterate over all peaks as PeakEntry instances.
         """
-        return iter(self.data)
+        for mz, intensity in self._peak:
+            yield PeakEntry(mz, intensity)
+    
+    def format_peak(self, decimals: int = 4, width: int = 12) -> str:
+        """
+        Format the peak matrix into a string with aligned columns.
 
-    def __array__(self):
+        Args:
+            decimals (int): Number of digits after the decimal point.
+            width (int): Total width of each field (must be at least decimals + 2).
+
+        Returns:
+            str: Formatted string with aligned m/z and intensity columns.
         """
-        Allows automatic conversion to a numpy array when needed.
-        """
-        return self.data
+        assert width >= decimals + 2, f"Width must be at least decimals + 2 (got width={width}, decimals={decimals})"
+        
+        format_str = f"{{:>{width}.{decimals}f}}\t{{:>{width}.{decimals}f}}"
+        lines = [format_str.format(mz, intensity) for mz, intensity in self._peak]
+        return "\n".join(lines)
 
 
     def normalize_intensity(self, to: float = 1.0) -> None:
@@ -97,3 +105,16 @@ class Peak:
         """
         all_integers = np.all(self.data[:, 0] % 1 == 0)
         return all_integers
+
+
+class PeakEntry:
+    """
+    Represents a single mass spectral peak with m/z and intensity.
+    """
+
+    def __init__(self, mz: float, int: float):
+        self.mz = mz
+        self.intensity = int
+
+    def __repr__(self):
+        return f"PeakEntry(mz={self.mz}, intensity={self.intensity})"

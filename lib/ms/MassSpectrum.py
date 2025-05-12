@@ -2,101 +2,70 @@ from __future__ import annotations
 
 import os
 
-from typing import Tuple
+from typing import Tuple, Dict, List
 import numpy as np
 import pandas as pd
+import dill
 
 from .Peak import Peak
 
 class MassSpectrum:
-    def __init__(self, peak_df):
-        assert isinstance(peak_df, pd.DataFrame), "peak_df must be a pandas DataFrame"
-        assert "Peak" in peak_df.columns, "peak_df must contain a 'Peak' column"
-        self._df: pd.DataFrame = peak_df
+    def __init__(self, peak_data: Dict[str, List]):
+        assert isinstance(peak_data, dict), "peak_data must be a dictionary"
+        assert "Peak" in peak_data, "peak_data must contain a 'Peak' key"
+        assert len({len(v) for v in peak_data.values()}) == 1, "All lists in peak_data must have the same length"
+        self._data = peak_data
 
     def __repr__(self):
-        return f"MassSpectrum(rows={len(self)}, columns={self._df.columns})"
+        return f"MassSpectrum(rows={len(self)}, columns={list(self._data.keys())})"
 
     def __len__(self):
-        return len(self._df)
+        return len(self._data["Peak"])
 
-    def __getattr__(self, name):
-        res = getattr(self._df, name)
-        if isinstance(res, pd.DataFrame):
-            return MassSpectrum(res)
-        return res
+    def __getattr__(self, name) -> List:
+        if name not in self._data:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        return self._data[name]
     
-    def __getitem__(self, key):
-        res = self._df[key]
-        if isinstance(res, pd.DataFrame):
-            return MassSpectrum(res)
-        return res
+    def __getitem__(self, i: int | slice) -> Peak | List[Peak]:
+        """
+        Return either a single Peak object (for int index)
+        or a list of Peak objects (for slice).
+        """
+        if isinstance(i, int):
+            assert 0 <= i < len(self), f"Index {i} out of range for MassSpectrum with {len(self)} peaks."
+            res = {key: value[i] for key, value in self._data.items()}
+            return Peak(res)
+
+        elif isinstance(i, slice):
+            # slice → list of Peak
+            indices = range(*i.indices(len(self)))
+            return [self[j] for j in indices]
+        
+        elif isinstance(i, list):
+            # list of indices → list of Peak
+            assert all(0 <= idx < len(self) for idx in i), f"Indices {i} out of range for MassSpectrum with {len(self)} peaks."
+            return [self[idx] for idx in i]
+
+        else:
+            raise TypeError(f"Invalid index type: {type(i)}. Must be int or slice.")
 
     def __setitem__(self, key, value):
-        self._df[key] = value
+        self._data[key] = value
 
     def __delitem__(self, key):
-        del self._df[key]
+        del self._data[key]
 
     def __contains__(self, item):
-        return item in self._df
+        return item in self._data
     
     def __iter__(self):
-        return iter(self._df)
-    
-    def __dir__(self):
-        return list(super().__dir__()) + list(self._df.__dir__())
-
-    def extract_peaks(self, indices, normalize: bool = False) -> Tuple[Peak]:
         """
-        Extracts mass spectral peaks from an MSP DataFrame for multiple rows.
-
-        Parameters:
-            indices (list, np.ndarray, tuple): A list, numpy array, or tuple of integer indices specifying 
-                                            the rows to extract peaks from.
-            normalize (bool): If True, normalize the intensity values to a maximum of 1.0.
-
-        Returns:
-            tuple[Peak]: A tuple of numpy arrays, where each array contains the peaks for a specific row.
-                            Each array is a 2D array with shape (n, 2), where n is the number of peaks
-                            and each row contains [mz, intensity].
-
-        Raises:
-            ValueError: If `indices` is not a list, numpy array, or tuple of integers.
+        Iterate over all peaks as Peak instances.
         """
-        if isinstance(indices, (list, np.ndarray, tuple)):
-            peaks = []
-            for i in indices:
-                _peak = self.extract_peak(i, normalize=normalize)
-                peaks.append(_peak)
-            return tuple(peaks)
-        else:
-            raise ValueError("indices must be a list/np.ndarray/tuple of int.")
-        
-    def extract_peak(self, idx, normalize: bool = False) -> Peak:
-        """
-        Extracts mass spectral peaks from an MSP DataFrame for a single row.
+        for i in range(len(self)):
+            yield Peak(self._data)[i]
 
-        Parameters:
-            idx (int): An integer index specifying the row to extract peaks from.
-            normalize (bool): If True, normalize the intensity values to a maximum of 1.0.
-
-        Returns:
-            Peak: A numpy array containing the peaks for the specified row.
-                        The array is a 2D array with shape (n, 2), where n is the number of peaks,
-                        and each row contains [mz, intensity].
-
-        Raises:
-            ValueError: If `idx` is not an integer.
-        """
-        if isinstance(idx, (int, np.integer)):  # Single index
-            peak_str = self._df.loc[idx, "Peak"]
-            peak = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
-            peak = Peak(peak, normalize=normalize)
-            return peak
-        else:
-            raise ValueError("idx must be an int.")
-        
 
     def save(self, file:str, overwrite=True) -> None:
         # Check if the directory already exists and handle overwrite option
@@ -106,28 +75,13 @@ class MassSpectrum:
         # Create the directory if it doesn't exist
         os.makedirs(os.path.dirname(file), exist_ok=True)
 
-        # Save metadata as parquet file
-        self._df.to_parquet(file, index=False)
-        
-    def save_tsv(self, file:str, overwrite=True) -> None:
-        # Check if the directory already exists and handle overwrite option
-        if not overwrite and os.path.exists(file):
-            raise FileExistsError(f"File '{file}' already exists. Set overwrite=True to overwrite the file.")
-        
-        # Create the directory if it doesn't exist
-        os.makedirs(os.path.dirname(file), exist_ok=True)
-
-        # Save metadata as tsv file
-        self._df.to_csv(file, index=False, sep='\t')
+        # Save as dill file
+        with open(file, 'wb') as f:
+            dill.dump(self._data, f)
 
     @staticmethod
     def load(file:str) -> MassSpectrum:
         assert os.path.exists(file), f"File '{file}' does not exist."
-        df = pd.read_parquet(file)
-        return MassSpectrum(df)
-    
-    @staticmethod
-    def load_tsv(file:str) -> MassSpectrum:
-        assert os.path.exists(file), f"File '{file}' does not exist."
-        df = pd.read_csv(file, sep='\t')
-        return MassSpectrum(df)
+        with open(file, 'rb') as f:
+            data = dill.load(f)
+        return MassSpectrum(data)

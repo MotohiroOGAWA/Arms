@@ -99,7 +99,7 @@ def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) ->
 
         # Append last peak data if file doesn't end with a blank line
         if line != '\n':
-            cols["Peak"] = ";".join([f"{mz},{intensity}" for mz, intensity in peak])
+            cols["Peak"][-1] = ";".join([f"{mz},{intensity}" for mz, intensity in peak])
             # peaks.append(np.array(peak))
             max_peak_cnt = max(max_peak_cnt, len(peak))
 
@@ -110,15 +110,9 @@ def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) ->
         else:
             for k in cols:
                 del cols[k][-1]
-        df = pd.DataFrame(data=cols, columns=cols.keys())
 
-        # Convert data types according to the predefined types
-        for c in df.columns:
-            if c in msp_column_types:
-                if msp_column_types[c] != "str":
-                    df[c] = pd.to_numeric(df[c], errors='coerce').astype(msp_column_types[c])
-
-    df['IdxOri'] = df.index
+    
+    cols['IdxOri'] = list(range(len(cols['Peak'])))
 
     if error_text != '':
         from datetime import datetime
@@ -126,7 +120,7 @@ def read_msp_file(filepath, encoding='utf-8', save_file=None, overwrite=True) ->
         with open(os.path.splitext(filepath)[0] + f"_error_{now}.txt", "w") as f:
             f.write(error_text)
     
-    mass_spectrum = MassSpectrum(df)
+    mass_spectrum = MassSpectrum(cols)
 
     if save_file is not None:
         mass_spectrum.save(save_file, overwrite=overwrite)
