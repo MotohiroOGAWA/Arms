@@ -1,3 +1,5 @@
 __pycache__/
 data/
+experiments/
+tests/template.py
 *.ipynb``
