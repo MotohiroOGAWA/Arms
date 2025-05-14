@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from typing import Tuple, Dict, List
+from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 import dill
@@ -12,6 +13,8 @@ from .Peak import Peak
 class MassSpectrum:
     def __init__(self, peak_data: Dict[str, List]):
         assert isinstance(peak_data, dict), "peak_data must be a dictionary"
+        assert all(isinstance(v, list) for v in peak_data.values()), "All values in peak_data must be lists"
+        assert all(isinstance(k, str) for k in peak_data.keys()), "All keys in peak_data must be strings"
         assert "Peak" in peak_data, "peak_data must contain a 'Peak' key"
         assert len({len(v) for v in peak_data.values()}) == 1, "All lists in peak_data must have the same length"
         self._data = peak_data
@@ -21,34 +24,50 @@ class MassSpectrum:
 
     def __len__(self):
         return len(self._data["Peak"])
-
-    def __getattr__(self, name) -> List:
-        if name not in self._data:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
-        return self._data[name]
     
-    def __getitem__(self, i: int | slice) -> Peak | List[Peak]:
+    def __getitem__(self, i: int | slice | List[int] | str | List[str]) -> Peak | MassSpectrum:
         """
-        Return either a single Peak object (for int index)
-        or a list of Peak objects (for slice).
+        Return a single Peak object (for int index) or a new MassSpectrum object (for slice or list of indices).
         """
+        is_row_dir = True
         if isinstance(i, int):
             assert 0 <= i < len(self), f"Index {i} out of range for MassSpectrum with {len(self)} peaks."
             res = {key: value[i] for key, value in self._data.items()}
             return Peak(res)
+        elif isinstance(i, str):
+            if i in self._data:
+                indices = [i]
+                is_row_dir = False
+            else:
+                raise KeyError(f"Key '{i}' not found in MassSpectrum data.")
 
         elif isinstance(i, slice):
-            # slice → list of Peak
             indices = range(*i.indices(len(self)))
-            return [self[j] for j in indices]
-        
-        elif isinstance(i, list):
-            # list of indices → list of Peak
-            assert all(0 <= idx < len(self) for idx in i), f"Indices {i} out of range for MassSpectrum with {len(self)} peaks."
-            return [self[idx] for idx in i]
 
+        elif isinstance(i, Sequence):
+            if all(isinstance(idx, int) for idx in i):
+                if all(0 <= idx < len(self) for idx in i):
+                    indices = i
+                else:
+                    raise IndexError(f"Indices {i} out of range for MassSpectrum with {len(self)} peaks.")
+                indices = i
+            elif all(idx in self._data for idx in i):
+                indices = i
+                is_row_dir = False
+            else:
+                raise TypeError(f"Invalid index type: {type(i)}. Must be int, slice, or list of ints.")
         else:
-            raise TypeError(f"Invalid index type: {type(i)}. Must be int or slice.")
+            raise TypeError(f"Invalid index type: {type(i)}. Must be int, slice, or list of ints.")
+
+        # Build new dict with sliced lists
+        if is_row_dir:
+            new_data = {key: [value[j] for j in indices] for key, value in self._data.items()}
+            return MassSpectrum(new_data)
+        else:
+            if 'Peak' not in indices:
+                indices.append('Peak')
+            new_data = {key: self._data[key] for key in indices}
+            return MassSpectrum(new_data)
 
     def __setitem__(self, key, value):
         self._data[key] = value
@@ -64,8 +83,7 @@ class MassSpectrum:
         Iterate over all peaks as Peak instances.
         """
         for i in range(len(self)):
-            yield Peak(self._data)[i]
-
+            yield self[i]
 
     def save(self, file:str, overwrite=True) -> None:
         # Check if the directory already exists and handle overwrite option

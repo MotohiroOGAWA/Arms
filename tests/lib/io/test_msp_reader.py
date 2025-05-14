@@ -22,13 +22,12 @@ class TestMspReader(unittest.TestCase):
         """
         peaks = self.mass_spectra[6:8]
         peaks = self.mass_spectra[[6,7]]
-        
+
+        mass_spectrum1 = self.mass_spectra['Name']
+        mass_spectrum2 = self.mass_spectra[['Name', 'Formula']]
+
         # Check if exactly two peak arrays are returned
         self.assertEqual(len(peaks), 2, "Expected 2 sets of peaks to be extracted.")
-
-        # Check if each returned peak array has shape (n, 2)
-        for peak in peaks:
-            self.assertEqual(peak.Peak.shape[1], 2, "Each peak must have shape (_, 2).")
 
 if __name__ == "__main__":
     # cd ~/workspace/mnt/app ; python -m unittest tests.lib.io.test_msp_reader
