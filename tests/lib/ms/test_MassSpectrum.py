@@ -1,6 +1,6 @@
 import unittest
 from lib.ms.MassSpectrum import MassSpectrum
-from lib.ms.Peak import Peak, PeakSeries, PeakEntry
+from lib.ms.Peak import Peak, PeakSeries, PeakEntry, Formula
 
 class TestTemplate(unittest.TestCase):
     def setUp(self):
@@ -11,7 +11,7 @@ class TestTemplate(unittest.TestCase):
             'Name': ['Test1', 'Test2', 'Test3'],
             'Value': [1, 2, 3],
             'Description': ['First test', 'Second test', 'Third test'],
-            'Peak': ['10.12,100;20.34,200;3.45,300', '11.12,110;21.34,210;31.45,310', '12.12,120;22.34,220;32.45,320'],
+            'Peak': ['17.02655,100;180.06339,200;3.45,300', '11.12,110;21.34,210;31.45,310', '12.12,120;22.34,220;32.45,320'],
         }
         self.mass_spectrum = MassSpectrum(data)
 
@@ -45,6 +45,17 @@ class TestTemplate(unittest.TestCase):
         peak_entry.mz
         peak_entry.intensity
         str(peak_entry)
+
+    def testAssignFormula(self):
+        formula1 = Formula("C6H12O6")
+        formula2 = Formula("NH3")
+
+        # peaks = self.mass_spectrum[0].peaks
+        # peaks.assign_formula([formula1, formula2])
+        self.mass_spectrum[0].peaks.assign_formula([formula1, formula2])
+        assigned_formulas = self.mass_spectrum[0].peaks.fragment_formulas
+        assert any(formula1 == f for f in assigned_formulas), "Formula assignment failed"
+        assert any(formula2 == f for f in assigned_formulas), "Formula assignment failed"
 
 if __name__ == "__main__":
     # cd ~/workspace/mnt/app ; python -m unittest tests. ~

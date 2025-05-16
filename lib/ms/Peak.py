@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterator, Optional
 from collections.abc import Sequence
+from ..chem.utilities.Formula import Formula
+from .constants import MIN_ABS_TOLERANCE
 
 
 class Peak:
@@ -26,9 +28,8 @@ class Peak:
         """
         assert isinstance(data, dict), "data must be a dictionary"
         assert "Peak" in data, "data must contain a 'Peak' key"
-        peak_str = data['Peak']
-        peaks = np.array([[float(mz), float(intensity)] for mz, intensity in [p.split(",") for p in peak_str.split(";")]])
-        self._peak = PeakSeries(peaks)
+        assert isinstance(data["Peak"], PeakSeries), "data['Peak'] must be a string"
+        self._peak = data["Peak"]
         self._data = data
         if normalize:
             self.normalize_intensity()
@@ -55,10 +56,10 @@ class Peak:
             else:
                 raise KeyError(f"Key '{i}' not found in Peak data.")
         elif isinstance(i, slice):
-            return PeakSeries(self._peak[i])
+            return self._peak[i]
         elif isinstance(i, Sequence):
             if all(isinstance(idx, int) for idx in i):
-                return PeakSeries(self._peak[i])
+                return self._peak[i]
             elif all(idx in self._data for idx in i):
                 return (self._data[k] for k in i)
             else:
@@ -100,23 +101,38 @@ class Peak:
         Returns:
             bool: True if all m/z values are integers, False otherwise.
         """
-        all_integers = np.all(self._peak._data[:, 0] % 1 == 0)
+        all_integers = np.all(self._peak.np[:, 0] % 1 == 0)
         return all_integers
+    
+    @property
+    def peaks(self) -> PeakSeries:
+        """
+        Return the underlying PeakSeries object.
+        """
+        return self._peak
 
 class PeakSeries:
     """
     Represents a series of mass spectral peaks.
     """
 
-    def __init__(self, data: np.ndarray):
-        assert isinstance(data, np.ndarray) or isinstance(data, PeakSeries), "PeakSeries data must be a numpy array or PeakSeries"
-        if isinstance(data, PeakSeries):
-            data = data._data
+    def __init__(self, data: np.ndarray, precursor_formula: Formula = None, fragment_formulas: List[Formula] = None):
+        assert isinstance(data, np.ndarray), "PeakSeries data must be a numpy array or PeakSeries"
         assert data.ndim == 2 and data.shape[1] == 2, "data must be a 2D array with shape (n_peaks, 2)"
-        self._data = data
+        assert fragment_formulas is None or (all((isinstance(f, Formula) or f is None) for f in fragment_formulas) and len(fragment_formulas) == data.shape[0]), "fragment_formulas must be a list of Formula objects with the same length as data"
+
+        self._data:List[PeakEntry] = [PeakEntry(mz, intensity) for mz, intensity in data]
+        self._precursor_formula = precursor_formula
+        if fragment_formulas is not None:
+            for i, formula in enumerate(fragment_formulas):
+                if formula is not None:
+                    self._data[i].formula = formula
+        
+        self._data.sort(key=lambda x: x.mz)
+        pass
 
     def __len__(self) -> int:
-        return self._data.shape[0]
+        return len(self._data)
     
     def __repr__(self):
         return f"PeakSeries(n_peaks={len(self)})"
@@ -130,26 +146,109 @@ class PeakSeries:
         """
         if isinstance(i, int):
             assert 0 <= i < len(self), f"Index {i} out of range for PeakSeries with {len(self)} peaks."
-            mz, intensity = self._data[i]
-            return PeakEntry(mz, intensity)
+            return self._data[i]
         elif isinstance(i, slice):
-            return PeakSeries(self._data[i])
+            return PeakSeries(self.np[i], precursor_formula=self._precursor_formula, fragment_formulas=[d.formula for d in self._data[i]])
         elif isinstance(i, Sequence):
             if all(isinstance(idx, int) for idx in i):
-                return PeakSeries(self._data[i])
+                return PeakSeries(self.np[i], precursor_formula=self._precursor_formula, fragment_formulas=[self._data[d].formula for d in i])
             else:
                 raise IndexError(f"Indices {i} out of range for PeakSeries with {len(self)} peaks.")
         else:
             raise TypeError(f"Invalid index type: {type(i)}. Must be int, slice, or list of int.")
         
-    def __iter__(self):
+    def __iter__(self) -> Iterator[PeakEntry]:
         """
         Iterate over all peaks as tuples of (m/z, intensity).
         """
-        for mz, intensity in self._data:
-            yield mz, intensity
+        for p in self._data:
+            yield p
 
+    @property
+    def precursor_formula(self) -> Optional[Formula]:
+        """
+        Formula of the precursor ion (before fragmentation).
+        """
+        return self._precursor_formula
+
+    @precursor_formula.setter
+    def precursor_formula(self, formula: Formula):
+        self._precursor_formula = formula
+
+    @property
+    def fragment_formulas(self) -> List[Formula]:
+        """
+        List of formulas for the fragment ions.
+        """
+        return [peak.formula for peak in self._data]
     
+    @property
+    def np(self) -> np.ndarray:
+        """
+        Return the underlying numpy array of m/z and intensity values.
+        """
+        value = np.array([list(p) for p in self._data])
+        return value
+    
+    @staticmethod
+    def parse(peak_str: str) -> PeakSeries:
+        """
+        Create a PeakSeries object from a string with optional formulas.
+
+        Supports format:
+            "mz,intensity;..." or
+            "mz,intensity,formula;..."
+
+        Args:
+            peak_str (str): String like "100.0,200.0,C6H12O6;150.0,300.0,C7H14O2"
+
+        Returns:
+            PeakSeries: A new PeakSeries instance with optional formulas.
+        """
+        assert isinstance(peak_str, str), "peak_str must be a string"
+
+        peak_list = []
+        formula_list = []
+
+        for entry in peak_str.strip().split(";"):
+            parts = entry.strip().split(",")
+            assert len(parts) >= 2, f"Invalid peak entry: {entry}"
+            mz = float(parts[0])
+            intensity = float(parts[1])
+            peak_list.append([mz, intensity])
+
+            if len(parts) >= 3:
+                formula = Formula(parts[2].strip())  # Assume Formula can be constructed from string
+            else:
+                formula = None
+            formula_list.append(formula)
+
+        data = np.array(peak_list)
+        return PeakSeries(data, fragment_formulas=formula_list)
+    
+    def to_str(self, include_formula: bool = True, decimals: int = 6) -> str:
+        """
+        Convert the PeakSeries into a string of the format:
+            "mz,intensity" or "mz,intensity,formula" for each peak.
+
+        Args:
+            include_formula (bool): Whether to include formula in the output if available.
+            decimals (int): Number of decimal places for mz and intensity.
+
+        Returns:
+            str: The string representation.
+        """
+        fmt = f"{{:.{decimals}f}},{{:.{decimals}f}}"
+        lines = []
+        for peak in self._data:
+            base = fmt.format(peak.mz, peak.intensity)
+            if include_formula and peak.formula is not None:
+                line = f"{base},{str(peak.formula)}"
+            else:
+                line = base
+            lines.append(line)
+        return ";".join(lines)
+
     def format_peak(self, decimals: int = 4, width: int = 12) -> str:
         """
         Format the peak matrix into a string with aligned columns.
@@ -178,9 +277,45 @@ class PeakSeries:
         assert to > 0, "to must be greater than 0"
         assert len(self) > 0, "No peaks to normalize"
         
-        max_intensity = np.max(self._data[:, 1])
+        peaks_np = self.np
+        max_intensity = np.max(peaks_np[:, 1])
         if max_intensity > 0:
-            self._data[:, 1] = self._data[:, 1] / max_intensity * to
+            normalized = peaks_np[:, 1] / max_intensity * to
+            for i, peak in enumerate(self._data):
+                peak.intensity = normalized[i]
+
+    def assign_formula(self, formulas: List[Formula], mz_tol: float = MIN_ABS_TOLERANCE) -> None:
+        """
+        Assigns the closest formula from the given list to each peak within the given m/z tolerance.
+
+        Parameters:
+            formulas (List[Formula]): A list of Formula objects to assign.
+            mz_tol (float): Maximum allowed absolute m/z difference to consider a match.
+        """
+        assert isinstance(formulas, list), "formulas must be a list of Formula objects"
+        assert all(isinstance(f, Formula) for f in formulas), "All elements in formulas must be Formula objects"
+
+        src_masses = np.array([f.exact_mass for f in formulas])  # shape: (n_formulas,)
+        peak_mzs = np.array([p.mz for p in self._data])          # shape: (n_peaks,)
+
+        # Compute the absolute difference matrix between peaks and formulas
+        diff_matrix = np.abs(peak_mzs[:, np.newaxis] - src_masses[np.newaxis, :])  # shape: (n_peaks, n_formulas)
+
+        # Find best match (min diff) for each peak
+        best_match_idx = np.argmin(diff_matrix, axis=1)
+        best_match_diff = diff_matrix[np.arange(diff_matrix.shape[0]), best_match_idx]
+
+        for i, (peak, diff) in enumerate(zip(self._data, best_match_diff)):
+            if diff <= mz_tol:
+                peak.formula = formulas[best_match_idx[i]]
+            else:
+                peak.formula = None
+        pass
+
+
+
+        
+
     
 
 class PeakEntry:
@@ -188,15 +323,22 @@ class PeakEntry:
     Represents a single mass spectral peak with m/z and intensity.
     """
 
-    def __init__(self, mz: float, int: float):
+    def __init__(self, mz: float, int: float, formula: Formula = None):
         self.mz = mz
         self.intensity = int
+        self._formula = formula
 
     def __repr__(self):
-        return f"PeakEntry(mz={self.mz}, intensity={self.intensity})"
+        if self.formula:
+            return f"PeakEntry(mz={self.mz}, intensity={self.intensity}, formula={self.formula})"
+        else:
+            return f"PeakEntry(mz={self.mz}, intensity={self.intensity})"
     
     def __str__(self):
-        return f"m/z: {self.mz}, Intensity: {self.intensity}"
+        if self.formula:
+            return f"m/z: {self.mz}, Intensity: {self.intensity}, Formula: {self.formula}"
+        else:
+            return f"m/z: {self.mz}, Intensity: {self.intensity}"
     
     def __iter__(self):
         """
@@ -204,3 +346,15 @@ class PeakEntry:
         """
         yield self.mz
         yield self.intensity
+
+    @property
+    def formula(self) -> Optional[Formula]:
+        """
+        Formula of the peak.
+        """
+        return self._formula
+    
+    @formula.setter
+    def formula(self, value: Formula):
+        assert (value is None) or isinstance(value, Formula), "formula must be a Formula object or None"
+        self._formula = value

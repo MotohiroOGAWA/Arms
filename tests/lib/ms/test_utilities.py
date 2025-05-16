@@ -1,7 +1,7 @@
 import unittest
 from lib.ms.utilities import *
 
-class TestMspReader(unittest.TestCase):
+class TestCalcCoverage(unittest.TestCase):
     def test_calc_coverage(self):
         """
         Test the calc_coverage function with a simple example.

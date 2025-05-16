@@ -81,15 +81,9 @@ class Formula:
     
     def __eq__(self, other: Formula) -> bool:
         if not isinstance(other, Formula):
-            return NotImplemented
-        if self.charge != other.charge:
             return False
-        if len(self.elements) != len(other.elements):
-            return False
-        for elem in self.elements:
-            if self.elements[elem] != other.elements.get(elem, 0):
-                return False
-        return True
+        
+        return str(self) == str(other)
 
     def diff(self, other: Formula) -> str:
         """
