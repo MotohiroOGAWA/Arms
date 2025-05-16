@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import dill
 
-from .Peak import Peak
+from .Peak import Peak, PeakSeries
 
 class MassSpectrum:
     def __init__(self, peak_data: Dict[str, List]):
@@ -17,7 +17,9 @@ class MassSpectrum:
         assert all(isinstance(k, str) for k in peak_data.keys()), "All keys in peak_data must be strings"
         assert "Peak" in peak_data, "peak_data must contain a 'Peak' key"
         assert len({len(v) for v in peak_data.values()}) == 1, "All lists in peak_data must have the same length"
+
         self._data = peak_data
+        self._peak_series_indices = set()
 
     def __repr__(self):
         return f"MassSpectrum(rows={len(self)}, columns={list(self._data.keys())})"
@@ -32,6 +34,9 @@ class MassSpectrum:
         is_row_dir = True
         if isinstance(i, int):
             assert 0 <= i < len(self), f"Index {i} out of range for MassSpectrum with {len(self)} peaks."
+            if isinstance(self._data["Peak"][i], str):
+                self._data["Peak"][i] = PeakSeries.parse(self._data["Peak"][i])
+                self._peak_series_indices.add(i)
             res = {key: value[i] for key, value in self._data.items()}
             return Peak(res)
         elif isinstance(i, str):
@@ -92,6 +97,11 @@ class MassSpectrum:
         
         # Create the directory if it doesn't exist
         os.makedirs(os.path.dirname(file), exist_ok=True)
+
+        for i in self._peak_series_indices:
+            self._data["Peak"][i] = self._data["Peak"][i].to_str()
+
+        assert all(isinstance(v, str) for v in self._data["Peak"]), "All Peak values must be strings before saving."
 
         # Save as dill file
         with open(file, 'wb') as f:
