@@ -28,6 +28,10 @@ class Formula:
     def __repr__(self):
         return f"Formula({self.__str__()})"
     
+
+    def __str__(self) -> str:
+        return self.to_string(no_charge=False)
+    
     def __hash__(self) -> int:
         return hash((frozenset(self.elements.items()), self.charge))
 
@@ -84,6 +88,13 @@ class Formula:
             return False
         
         return str(self) == str(other)
+    
+    @property
+    def plain(self) -> str:
+        """
+        Return the formula as a plain string without charge.
+        """
+        return self.to_string(no_charge=True)
 
     def diff(self, other: Formula) -> str:
         """
@@ -148,15 +159,23 @@ class Formula:
         ordered = tuple(m[0] for m in matches)
         return ordered
 
-    def __str__(self) -> str:
+    def to_string(self, no_charge: bool = False) -> str:
+        """
+        Return the formula as a string. If no_charge=True, omit the charge.
+        """
         formula = "".join(
             f"{elem}{self.elements[elem] if self.elements[elem] != 1 else ''}"
             for elem in self.elements
         )
+
+        if no_charge:
+            return formula
+
         if self.charge > 0:
             return formula + ("+" if self.charge == 1 else f"+{self.charge}")
         elif self.charge < 0:
             return formula + ("-" if self.charge == -1 else f"-{-self.charge}")
+        
         return formula
 
     def copy(self) -> Formula:
