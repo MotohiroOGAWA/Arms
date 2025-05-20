@@ -9,39 +9,69 @@ from ...ms.constants import AdductType
 from .Molecule import Molecule
 from .Atom import Atom
 from .Fragment import Fragment
-from ..utilities.Formula import Formula
+from .Formula import Formula
 
 class Fragmenter:
     """
     Fragmenter class to fragment a molecule into smaller parts.
     """
-    def __init__(self, adduct_types: Tuple[AdductType]):
+    def __init__(self, adduct_types: Tuple[AdductType], max_depth: int):
         self.adduct_types = adduct_types
+        self.max_depth = max_depth
 
-    def fragment_all(self, molecule: Molecule) -> Dict[(BondPosition, AdductType), List[Fragment]]:
+    def create_fragment_tree(self, molecule: Molecule) -> FragmentTree:
+        """
+        Create a fragment tree from the molecule.
+        """
+        fragment_tree = FragmentTree(molecule)
+
+        for adduct_type in self.adduct_types:
+            fragment = Fragment(molecule, adduct_type=adduct_type)
+            node = self._create_fragment_node(fragment, depth=1)
+            fragment_tree.root.add_child(bond_pos=BondPosition(), adduct_type=AdductType.NONE, child=node)
+
+        return fragment_tree
+
+    def _create_fragment_node(self, fragment: Fragment, depth: int) -> FragmentNode:
+        """
+        Create a fragment node for the tree.
+        """
+        node = FragmentNode(fragment, depth=depth)
+        if depth < self.max_depth:
+            fragmented_list = self._fragment_all(fragment.stable_mol)
+
+            for (bond_pos, adduct_type), fragments in fragmented_list.items():
+                for f in fragments:
+                    child = self._create_fragment_node(f, depth=depth + 1)
+                    node.add_child(bond_pos=bond_pos, adduct_type=adduct_type, child=child)
+
+        return node
+
+
+    def _fragment_all(self, molecule: Molecule) -> Dict[(BondPosition, AdductType), List[Fragment]]:
         
         fragments_by_bond_pos_and_adduct = defaultdict(list)
-        for (bond_pos, adduct_type), fragments in self.fragment_non_ring_single_bonds(molecule).items():
+        for (bond_pos, adduct_type), fragments in self._fragment_non_ring_single_bonds(molecule).items():
             fragments_by_bond_pos_and_adduct[(bond_pos, adduct_type)].extend(fragments)
 
         return dict(fragments_by_bond_pos_and_adduct)
 
-    def fragment_non_ring_single_bonds(self, molecule: Molecule) -> Dict[(BondPosition, AdductType), List[Fragment]]:
+    def _fragment_non_ring_single_bonds(self, molecule: Molecule) -> Dict[(BondPosition, AdductType), List[Fragment]]:
         """
         Fragment the molecule at all splitable bonds.
         """
-        split_bonds = self.get_non_ring_single_bonds(molecule)
+        split_bonds = self._get_non_ring_single_bonds(molecule)
 
         fragment_list = defaultdict(list)
         for bond in split_bonds:
             # Split the bond and create a new fragment
-            fragmented_by_adducts = self.split_simple_bond(molecule, bond)
+            fragmented_by_adducts = self._split_simple_bond(molecule, bond)
             for adduct_type, fragmented in fragmented_by_adducts.items():
                 fragment_list[(BondPosition(bond.GetIdx()), adduct_type)].extend(fragmented)
 
         return dict(fragment_list)
     
-    def get_non_ring_single_bonds(self, molecule: Molecule) -> Tuple[Chem.Bond]:
+    def _get_non_ring_single_bonds(self, molecule: Molecule) -> Tuple[Chem.Bond]:
         """
         Get all non-ring single (σ) bonds that are candidates for cleavage.
 
@@ -55,7 +85,7 @@ class Fragmenter:
         return tuple(split_bonds)
 
         
-    def split_simple_bond(self, molecule: Molecule, bond: Union[Chem.Bond, int]) -> Dict[List[Fragment]]:
+    def _split_simple_bond(self, molecule: Molecule, bond: Union[Chem.Bond, int]) -> Dict[List[Fragment]]:
         rw_mol = Chem.RWMol(molecule.mol)
 
         if isinstance(bond, int):
@@ -84,45 +114,11 @@ class FragmentTree:
     """
     FragmentTree class to represent a tree of fragments.
     """
-    def __init__(self):
-        self.molecule: Molecule = None
-        self.root: FragmentNode = None
-        self.fragmenter: Fragmenter = None
-        self.max_depth = None
-    
-    def create_fragment_tree(self, molecule: Molecule, fragmenter: Fragmenter, max_depth: int) -> FragmentTree:
-        """
-        Create a fragment tree from the molecule.
-        """
-        self.fragmenter = fragmenter
-        self.max_depth = max_depth
+    def __init__(self, molecule: Molecule):
         self.molecule = molecule
-
-        fragment = Fragment(molecule, adduct_type=AdductType.NONE)
-        root = FragmentNode(fragment, depth=0)
-
-        for adduct_type in self.fragmenter.adduct_types:
-            fragment = Fragment(molecule, adduct_type=adduct_type)
-            node = self.create_fragment_node(fragment, depth=1)
-            root.add_child(bond_pos=BondPosition(), adduct_type=AdductType.NONE, child=node)
-
-        self.root = root
-
-    
-    def create_fragment_node(self, fragment: Fragment, depth: int) -> FragmentNode:
-        """
-        Create a fragment node for the tree.
-        """
-        node = FragmentNode(fragment, depth=depth)
-        if depth < self.max_depth:
-            fragmented_list = self.fragmenter.fragment_all(fragment.stable_mol)
-
-            for (bond_pos, adduct_type), fragments in fragmented_list.items():
-                for f in fragments:
-                    child = self.create_fragment_node(f, depth=depth + 1)
-                    node.add_child(bond_pos=bond_pos, adduct_type=adduct_type, child=child)
-
-        return node
+        
+        self.fragment = Fragment(molecule, adduct_type=AdductType.NONE)
+        self.root = FragmentNode(self.fragment, depth=0)
     
     def get_all_formulas(self) -> List[Formula]:
         """
@@ -166,7 +162,7 @@ class FragmentNode:
         return self._tree_str(self, level=level, display_fields=display_fields)
 
     @staticmethod
-    def _tree_str(node, level: int = 0, display_fields: tuple[Literal['SMILES', 'mz', 'formula'], ...] = ('SMILES', 'mz', 'formula')) -> str:
+    def _tree_str(node:FragmentNode, level: int = 0, display_fields: tuple[Literal['SMILES', 'mz', 'formula'], ...] = ('SMILES', 'mz', 'formula')) -> str:
         indent = ' ' * (level * 3)
         entry_prefix = f"{indent}|++"
         output = ""
@@ -188,6 +184,7 @@ class FragmentNode:
 
         for (bond_pos, adduct_type), children in node.children.items():
             for child in children:
+                output += '\n'
                 output += f"{indent}|- Bond: {bond_pos}, Adduct: {adduct_type.value}\n"
                 output += FragmentNode._tree_str(child, level=level + 1, display_fields=display_fields)
 
@@ -226,10 +223,9 @@ if __name__ == "__main__":
 
     # fragmenter = Fragmenter()
     # fragmenter.split_simple_bond(molecule.mol, 4)
-    fragmenter = Fragmenter((AdductType.M_PLUS_H_POS,))
+    fragmenter = Fragmenter((AdductType.M_PLUS_H_POS,), max_depth=2)
 
-    fragment_tree = FragmentTree()
-    fragment_tree.create_fragment_tree(molecule, fragmenter, max_depth=2)
+    fragment_tree = fragmenter.create_fragment_tree(molecule)
     
     all_formulas = fragment_tree.get_all_formulas()
 

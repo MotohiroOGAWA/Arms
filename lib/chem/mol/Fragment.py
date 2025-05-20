@@ -7,7 +7,7 @@ from collections import Counter, OrderedDict
 
 from .Molecule import Molecule
 from .Atom import Atom
-from ..utilities.Formula import Formula
+from .Formula import Formula
 from ...ms.Adduct import Adduct
 from ...ms.constants import AdductType
 
@@ -25,7 +25,7 @@ class Fragment:
         self._adducts_out: List[Chem.Mol] = []  # - adducts
         self._adduct_type: AdductType = adduct_type
 
-        self.reconstruct_fragment()
+        self._reconstruct_fragment()
 
         self.adduct = self._adduct()
 
@@ -35,7 +35,7 @@ class Fragment:
         return f"Fragment({Chem.MolToSmiles(self.raw_mol.mol, canonical=True)}, {self.adduct})"
 
 
-    def reconstruct_fragment(self):
+    def _reconstruct_fragment(self):
         """
         Reconstruct a fragmented molecule to satisfy valency and charge stability.
         """
@@ -43,25 +43,25 @@ class Fragment:
 
         dummy_idxs = [atom.GetIdx() for atom in rw_mol.GetAtoms() if atom.GetAtomicNum() == 0]
         if len(dummy_idxs) == 0:
-            self.reconstruct_no_bond_fragment(rw_mol)
+            self._reconstruct_no_bond_fragment(rw_mol)
         elif len(dummy_idxs) == 1:
-            self.reconstruct_single_bond_fragment(rw_mol, dummy_idxs[0])
+            self._reconstruct_single_bond_fragment(rw_mol, dummy_idxs[0])
         else:
             raise NotImplementedError(f"Fragment reconstruction for multiple dummy atoms ({len(dummy_idxs)}) is not yet implemented.")
 
-    def reconstruct_no_bond_fragment(self, rw_mol: Chem.RWMol):
+    def _reconstruct_no_bond_fragment(self, rw_mol: Chem.RWMol):
         self.stable_mol = Molecule(rw_mol.GetMol())
         
         if self._adduct_type == AdductType.NONE:
-            self.reset_adducts()
+            self._reset_adducts()
         elif self._adduct_type == AdductType.M_PLUS_H_POS:
-            self.add_proton_adduct_in(1)
+            self._add_proton_adduct_in(1)
         elif self._adduct_type == AdductType.M_MINUS_H_NEG:
-            self.add_proton_adduct_out(1)
+            self._add_proton_adduct_out(1)
         else:
             raise NotImplementedError(f"reconstruct_no_bond_fragment: Unsupported adduct type '{self._adduct_type}'.")
 
-    def reconstruct_single_bond_fragment(self, rw_mol: Chem.RWMol, dummy_idx: int):
+    def _reconstruct_single_bond_fragment(self, rw_mol: Chem.RWMol, dummy_idx: int):
         """
         Reconstruct a fragment with a single broken bond (i.e., one dummy atom).
         """
@@ -104,25 +104,25 @@ class Fragment:
                     m = suppl[0]
                 self.stable_mol = Molecule(m)
                 if self.stable_mol.charge == 0:
-                    self.add_proton_adduct_in(1)
+                    self._add_proton_adduct_in(1)
 
             else:
                 raise NotImplementedError(f"Reconstruction not implemented for atom type: {symbol}")
 
-    def reset_adducts(self):
+    def _reset_adducts(self):
         """
         Reset the adducts of the fragment.
         """
         self._adducts_in = []
         self._adducts_out = []
 
-    def add_adduct_in(self, mol: Chem.Mol):
+    def _add_adduct_in(self, mol: Chem.Mol):
         self._adducts_in.append(mol)
 
-    def add_adduct_out(self, mol: Chem.Mol):
+    def _add_adduct_out(self, mol: Chem.Mol):
         self._adducts_out.append(mol)
 
-    def add_proton_adduct_in(self, count: int = 1):
+    def _add_proton_adduct_in(self, count: int = 1):
         """
         Add proton(s) [H+] to the fragment as a positive adduct.
 
@@ -133,7 +133,7 @@ class Fragment:
         for _ in range(count):
             self._adducts_in.append(hplus)
 
-    def add_proton_adduct_out(self, count: int = 1):
+    def _add_proton_adduct_out(self, count: int = 1):
         """
         Remove proton(s) [H+] from the fragment as a negative adduct.
 
