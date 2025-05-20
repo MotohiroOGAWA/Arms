@@ -3,7 +3,9 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, List, Tuple, Iterator, Optional
 from collections.abc import Sequence
+from ..chem.mol.Molecule import Molecule
 from ..chem.mol.Formula import Formula
+from ..chem.mol.Fragmenter import Fragmenter
 from .constants import MIN_ABS_TOLERANCE
 
 
@@ -104,6 +106,21 @@ class Peak:
         """
         self._peak.normalize_intensity(to)
 
+    def assign_formula(self, fragmenter:Fragmenter) -> None:
+        """
+        Assigns the closest formula from the given list to each peak within the given m/z tolerance.
+
+        Parameters:
+            formulas (List[Formula]): A list of Formula objects to assign.
+            mz_tol (float): Maximum allowed absolute m/z difference to consider a match.
+        """
+        smiles = self["SMILES"]
+        molecule = Molecule(smiles)
+        fragment_tree = fragmenter.create_fragment_tree(molecule)
+
+        formulas = fragment_tree.get_all_formulas()
+        
+
     @property
     def is_int_mz(self) -> bool:
         """
@@ -146,7 +163,12 @@ class PeakSeries:
         return len(self._data)
     
     def __repr__(self):
-        return f"PeakSeries(n_peaks={len(self)})"
+        contents = [f'\t{line}' for line in str(self).splitlines()]
+        content = "\n".join(contents)
+        if self._precursor_formula:
+            return f"PeakSeries(n_peaks={len(self)}, precursor={self._precursor_formula.exact_mass}({self._precursor_formula}),\n{content}\n)"
+        else:
+            return f"PeakSeries(n_peaks={len(self)},\n{content}\n)"
     
     def __str__(self):
         return self.format_peak()
@@ -369,3 +391,5 @@ class PeakEntry:
     def formula(self, value: Formula):
         assert (value is None) or isinstance(value, Formula), "formula must be a Formula object or None"
         self._formula = value
+
+

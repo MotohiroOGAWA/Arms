@@ -21,6 +21,13 @@ class TestTemplate(unittest.TestCase):
         self.mass_spectrum[0:2]
         self.mass_spectrum['Name']
         self.mass_spectrum[['Name', 'Value']]
+
+    def testMassSpectrumSeries(self):
+        mass_spectrum_series = self.mass_spectrum['Name']
+        mass_spectrum_series[0]
+        mass_spectrum_series[[0, 1]]
+        mass_spectrum_series[0:2]
+        mass_spectrum_series.value_counts()
     
     def testPeak(self):
         peak: Peak = self.mass_spectrum[0]
