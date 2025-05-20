@@ -1,5 +1,5 @@
 import unittest
-from lib.chem.utilities.Formula import Formula
+from lib.chem.mol.Formula import Formula
 
 
 class TestFormula(unittest.TestCase):

@@ -7,7 +7,6 @@ from rdkit.Chem import rdMolDescriptors
 
 from ...ms.constants import AdductType
 from .Molecule import Molecule
-from .Atom import Atom
 from .Fragment import Fragment
 from .Formula import Formula
 

@@ -1,5 +1,6 @@
 import unittest
 from lib.io.msp_reader import read_msp_file
+from lib.ms.MassSpectrum import MassSpectrum
 
 class TestMspReader(unittest.TestCase):
     def setUp(self):
@@ -8,7 +9,7 @@ class TestMspReader(unittest.TestCase):
         It loads the MSP file and prepares the MassSpectrum object.
         """
         self.msp_file = './tests/data/msp/MSMS_Public_EXP_NEG_VS17_test.msp'
-        self.mass_spectra = read_msp_file(self.msp_file)
+        self.cols = read_msp_file(self.msp_file)
 
     # def test_read_msp_file(self):
     #     """
@@ -20,11 +21,12 @@ class TestMspReader(unittest.TestCase):
         """
         Test whether peaks can be correctly extracted from multiple indices.
         """
-        peaks = self.mass_spectra[6:8]
-        peaks = self.mass_spectra[[6,7]]
+        mass_spectra = MassSpectrum(self.cols)
+        peaks = mass_spectra[6:8]
+        peaks = mass_spectra[[6,7]]
 
-        mass_spectrum1 = self.mass_spectra['Name']
-        mass_spectrum2 = self.mass_spectra[['Name', 'Formula']]
+        mass_spectrum1 = mass_spectra['Name']
+        mass_spectrum2 = mass_spectra[['Name', 'Formula']]
 
         # Check if exactly two peak arrays are returned
         self.assertEqual(len(peaks), 2, "Expected 2 sets of peaks to be extracted.")
