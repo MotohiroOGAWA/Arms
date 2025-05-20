@@ -9,6 +9,7 @@ import pandas as pd
 import dill
 
 from .Peak import Peak, PeakSeries
+from ..io.msp_reader import read_msp_file
 
 class MassSpectrum:
     def __init__(self, peak_data: Dict[str, List]):
@@ -113,3 +114,16 @@ class MassSpectrum:
         with open(file, 'rb') as f:
             data = dill.load(f)
         return MassSpectrum(data)
+    
+    @staticmethod
+    def from_msp(filepath, encoding='utf-8', save_file=None, overwrite=True) -> MassSpectrum:
+        """
+        Read an msp file and return a MassSpectrum object.
+        """
+        cols = read_msp_file(filepath, encoding=encoding)
+        mass_spectrum = MassSpectrum(cols)
+
+        if save_file:
+            mass_spectrum.save(save_file, overwrite=overwrite)\
+            
+        return mass_spectrum

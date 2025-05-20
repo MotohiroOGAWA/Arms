@@ -90,6 +90,13 @@ class Formula:
         return str(self) == str(other)
     
     @property
+    def value(self) -> str:
+        """
+        Return the formula as a string with charge.
+        """
+        return self.to_string(no_charge=False)
+    
+    @property
     def plain(self) -> str:
         """
         Return the formula as a plain string without charge.

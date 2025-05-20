@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, List, Tuple, Iterator, Optional
 from collections.abc import Sequence
-from ..chem.utilities.Formula import Formula
+from ..chem.mol.Formula import Formula
 from .constants import MIN_ABS_TOLERANCE
 
 
@@ -38,10 +38,21 @@ class Peak:
         return len(self._peak)
     
     def __str__(self) -> str:
-        return self._peak.format_peak()
+        res = ''
+        max_len = max(len(k) for k in self._data.keys())
+        for d in self._data:
+            if d == "Peak":
+                continue
+            else:
+                res += f"{d:<{max_len+1}}:\t{self._data[d]}\n"
+        res += f"{'Peak':<{max_len+1}}: \t{self._peak.to_str()}"
+        return res
+        
 
     def __repr__(self) -> str:
-        return str(self)
+        contents = [f'\t{line}' for line in str(self).splitlines()]
+        content = "\n".join(contents)
+        return f"Peak(n_peaks={len(self)},\n{content}\n)"
     
     def __getitem__(self, i: int | slice | List[int] | str | List[str]) -> PeakEntry | PeakSeries:
         """

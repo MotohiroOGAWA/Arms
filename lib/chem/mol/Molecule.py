@@ -1,6 +1,6 @@
 from typing import Union
 from rdkit import Chem
-from ..utilities.Formula import Formula
+from .Formula import Formula
 
 class Molecule:
     """

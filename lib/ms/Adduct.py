@@ -1,6 +1,6 @@
 from typing import Dict, List, OrderedDict, Literal
 from rdkit import Chem
-from ..chem.utilities.Formula import Formula
+from ..chem.mol.Formula import Formula
 
 class Adduct:
     """
