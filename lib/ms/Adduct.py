@@ -1,6 +1,8 @@
 from typing import Dict, List, OrderedDict, Literal
+import re
 from rdkit import Chem
 from ..chem.mol.Formula import Formula
+from ..ms.utilities import charge_from_str
 
 class Adduct:
     """
@@ -77,4 +79,37 @@ class Adduct:
     
     def __eq__(self, value):
         self.__str__() == str(value)
-                
+
+    @staticmethod
+    def from_str(adduct_str: str) -> "Adduct":
+        """
+        Parse an adduct string like "[M+H]+", "[M+2Na-H]-" into an Adduct object.
+
+        Args:
+            adduct_str (str): The adduct string.
+
+        Returns:
+            Adduct: Parsed Adduct object.
+        """
+        assert adduct_str.startswith("[") and "]" in adduct_str, f"Invalid adduct format: {adduct_str}"
+
+        # extract content inside brackets and the final charge
+        main, charge_part = adduct_str[1:].split("]")
+        mode = main[0]  # 'M' or 'F'
+        remainder = main[1:]  # e.g., '+H', '+2Na-H'
+
+        # charge part: '+' or '+2' or '-' etc.
+        charge = charge_from_str(charge_part)
+
+        # parse element differences using regex
+        # pattern: +H, -H, +2Na, -2H2O etc.
+        pattern = re.compile(r'([+-])(\d*)([A-Z][a-z]?[0-9]*)')
+        element_diff: Dict[str, int] = {}
+
+        for sign, num, elem in pattern.findall(remainder):
+            count = int(num) if num else 1
+            count = count if sign == '+' else -count
+            element_diff[elem] = element_diff.get(elem, 0) + count
+
+        return Adduct(mode=mode, element_diff=element_diff, charge_diff=charge)
+                    

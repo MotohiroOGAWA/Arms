@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple, Iterator, Optional
 from collections.abc import Sequence
 from ..chem.mol.Molecule import Molecule
 from ..chem.mol.Formula import Formula
-from ..chem.mol.Fragmenter import Fragmenter
+from ..ms.Adduct import Adduct
 from .constants import MIN_ABS_TOLERANCE
 
 
@@ -32,7 +32,7 @@ class Peak:
         assert "Peak" in data, "data must contain a 'Peak' key"
         assert isinstance(data["Peak"], PeakSeries), "data['Peak'] must be a string"
         self._peak = data["Peak"]
-        self._data = data
+        self._data: dict = data
         if normalize:
             self.normalize_intensity()
 
@@ -120,6 +120,10 @@ class Peak:
 
         formulas = fragment_tree.get_all_formulas()
         
+        self._peak.assign_formula(formulas)
+
+        pass
+
 
     @property
     def is_int_mz(self) -> bool:
@@ -295,8 +299,9 @@ class PeakSeries:
         """
         assert width >= decimals + 2, f"Width must be at least decimals + 2 (got width={width}, decimals={decimals})"
         
-        format_str = f"{{:>{width}.{decimals}f}}\t{{:>{width}.{decimals}f}}"
-        lines = [format_str.format(mz, intensity) for mz, intensity in self._data]
+        format_str1 = f"{{:>{width}.{decimals}f}}\t{{:>{width}.{decimals}f}}"
+        format_str2 = f"{{:>{width}.{decimals}f}}\t{{:>{width}.{decimals}f}}\t{{}}"
+        lines = [format_str2.format(p.mz, p.intensity, p.formula) if p.formula else format_str1.format(p.mz, p.intensity) for p in self._data]
         return "\n".join(lines)
     
     def normalize_intensity(self, to: float = 1.0) -> None:
@@ -345,7 +350,30 @@ class PeakSeries:
                 peak.formula = None
         pass
 
+    def assigned_formula_coverage(self, weighted: bool = True) -> float:
+        """
+        Calculate the proportion of peaks that have an assigned formula.
 
+        Args:
+            weighted (bool): If True, weight by intensity. If False, count peaks equally.
+
+        Returns:
+            float: The coverage ratio (0.0 to 1.0).
+        """
+        assigned_weight = 0.0
+        total_weight = 0.0
+
+        for peak in self._data:
+            weight = peak.intensity if weighted else 1.0
+            if peak.formula is not None:
+                assigned_weight += weight
+            total_weight += weight
+
+        return assigned_weight / total_weight if total_weight > 0 else 0.0
+
+        
+
+            
 
         
 

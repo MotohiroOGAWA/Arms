@@ -4,6 +4,29 @@ from rdkit import Chem
 import numpy as np
 from .constants import MIN_ABS_TOLERANCE
 
+def charge_from_str(charge_str: str) -> int:
+    """
+    Convert a charge string to an integer.
+    
+    Args:
+        charge_str (str): Charge string, e.g., "+", "-", "+2", "-3".
+    
+    Returns:
+        int: Charge as an integer.
+    """
+    if charge_str == "":
+        return 0
+    elif charge_str == "+":
+        return 1
+    elif charge_str == "-":
+        return -1
+    elif charge_str.startswith("+"):
+        return int(charge_str[1:])
+    elif charge_str.startswith("-"):
+        return int(charge_str)
+    else:
+        raise ValueError(f"Invalid charge string: {charge_str}")
+
 def calc_coverage(src_ms: np.ndarray, tgt_ms: np.ndarray, wt_intensity=True, mz_tol=MIN_ABS_TOLERANCE) -> float:
     if src_ms.ndim != 1:
         raise ValueError("src_ms must be a 1D array (m/z array).")
