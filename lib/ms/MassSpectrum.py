@@ -15,13 +15,12 @@ from ..io.msp_reader import read_msp_file
 class MassSpectrum:
     def __init__(self, peak_data: Dict[str, List]):
         assert isinstance(peak_data, dict), "peak_data must be a dictionary"
-        assert all(isinstance(v, list) or isinstance(v, MassSpectrumSeries) for v in peak_data.values()), "All values in peak_data must be lists"
+        assert all(isinstance(v, list) or isinstance(v, pd.Series) for v in peak_data.values()), "All values in peak_data must be lists"
         assert all(isinstance(k, str) for k in peak_data.keys()), "All keys in peak_data must be strings"
         assert "Peak" in peak_data, "peak_data must contain a 'Peak' key"
         assert len({len(v) for v in peak_data.values()}) == 1, "All lists in peak_data must have the same length"
 
-        self._data = {k: MassSpectrumSeries(k,v) for k, v in peak_data.items()}
-        self._peak_series_indices = set()
+        self._data = peak_data
 
     def __repr__(self):
         return f"MassSpectrum(rows={len(self)}, columns={list(self._data.keys())})"
@@ -38,18 +37,14 @@ class MassSpectrum:
         pass
 
     @overload
-    def __getitem__(self, i: List[int]) -> MassSpectrum:
+    def __getitem__(self, i: List) -> MassSpectrum:
         pass
 
     @overload
-    def __getitem__(self, i: List[str]) -> MassSpectrum:
+    def __getitem__(self, i: str) -> pd.Series:
         pass
 
-    @overload
-    def __getitem__(self, i: str) -> MassSpectrumSeries:
-        pass
-
-    def __getitem__(self, i: int | slice | List[int] | str | List[str]) -> Peak | MassSpectrum | MassSpectrumSeries:
+    def __getitem__(self, i: int | slice | List[int] | str | List[str]):
         """
         Return a single Peak object (for int index) or a new MassSpectrum object (for slice or list of indices).
         """
@@ -58,27 +53,34 @@ class MassSpectrum:
             assert 0 <= i < len(self), f"Index {i} out of range for MassSpectrum with {len(self)} peaks."
             if isinstance(self._data["Peak"][i], str):
                 self._data["Peak"][i] = PeakSeries.parse(self._data["Peak"][i])
-                self._peak_series_indices.add(i)
             res = {key: value[i] for key, value in self._data.items()}
             return Peak(res)
         elif isinstance(i, str):
             if i in self._data:
                 indices = [i]
                 is_row_dir = False
-                return MassSpectrumSeries(i, self._data[i])
+                return pd.Series(self._data[i], name=i)
             else:
                 raise KeyError(f"Key '{i}' not found in MassSpectrum data.")
 
         elif isinstance(i, slice):
             indices = range(*i.indices(len(self)))
 
-        elif isinstance(i, Sequence):
-            if all(isinstance(idx, int) for idx in i):
+        elif isinstance(i, Sequence) or isinstance(i, pd.Series):
+            if isinstance(i, pd.Series):
+                if i.dtype == 'bool':
+                    indices = i[i].index.tolist()
+                else:
+                    raise TypeError(f"Invalid index type: {type(i)}. Must be int, slice, or list of ints.")
+            elif all(isinstance(idx, int) for idx in i):
                 if all(0 <= idx < len(self) for idx in i):
                     indices = i
                 else:
                     raise IndexError(f"Indices {i} out of range for MassSpectrum with {len(self)} peaks.")
                 indices = i
+            elif all(isinstance(flag, bool) for flag in i):
+                assert len(i) == len(self), f"Boolean index must be the same length as MassSpectrum with {len(self)} peaks."
+                indices = [idx for idx, flag in enumerate(i) if flag]
             elif all(idx in self._data for idx in i):
                 indices = i
                 is_row_dir = False
@@ -113,7 +115,7 @@ class MassSpectrum:
         for i in range(len(self)):
             yield self[i]
 
-    def save(self, file:str, overwrite=True) -> None:
+    def save(self, file:str, overwrite=True, preview=False) -> None:
         # Check if the directory already exists and handle overwrite option
         if not overwrite and os.path.exists(file):
             raise FileExistsError(f"File '{file}' already exists. Set overwrite=True to overwrite the file.")
@@ -121,14 +123,17 @@ class MassSpectrum:
         # Create the directory if it doesn't exist
         os.makedirs(os.path.dirname(file), exist_ok=True)
 
-        for i in self._peak_series_indices:
-            self._data["Peak"][i] = self._data["Peak"][i].to_str()
-
-        assert all(isinstance(v, str) for v in self._data["Peak"]), "All Peak values must be strings before saving."
+        for i in range(len(self)):
+            if isinstance(self._data["Peak"][i], PeakSeries):
+                self._data["Peak"][i] = self._data["Peak"][i].to_str()
 
         # Save as dill file
         with open(file, 'wb') as f:
             dill.dump(self._data, f)
+
+        if preview:
+            df = pd.DataFrame(self._data)
+            df.head(n=100).to_csv(file + ".preview.tsv", index=False, sep="\t")
 
     @staticmethod
     def load(file:str) -> MassSpectrum:
@@ -146,71 +151,7 @@ class MassSpectrum:
         mass_spectrum = MassSpectrum(cols)
 
         if save_file:
-            mass_spectrum.save(save_file, overwrite=overwrite)\
+            mass_spectrum.save(save_file, overwrite=overwrite)
             
         return mass_spectrum
     
-class MassSpectrumSeries:
-    def __init__(self, name:str, series:Sequence):
-        self.name = name
-        self._series = series
-
-    def __str__(self):
-        return f"MassSpectrumSeries(name={self.name},rows={len(self)})"
-
-    def __repr__(self):
-        return str(self)
-
-    def __len__(self):
-        return len(self._series)
-    
-    @overload
-    def __getitem__(self, i: int):
-        pass
-
-    @overload
-    def __getitem__(self, i: slice | List[int]) -> MassSpectrumSeries:
-        pass
-    
-    def __getitem__(self, i: int | slice | List[int]) -> MassSpectrumSeries:
-        """
-        Return a single Peak object (for int index) or a new MassSpectrum object (for slice or list of indices).
-        """
-        if isinstance(i, int):
-            assert 0 <= i < len(self), f"Index {i} out of range for MassSpectrumSeries with {len(self)} peaks."
-            return self._series[i]
-        elif isinstance(i, slice):
-            indices = range(*i.indices(len(self)))
-        elif isinstance(i, Sequence):
-            if all(isinstance(idx, int) for idx in i):
-                if all(0 <= idx < len(self) for idx in i):
-                    indices = i
-                else:
-                    raise IndexError(f"Indices {i} out of range for MassSpectrumSeries with {len(self)} peaks.")
-            else:
-                raise TypeError(f"Invalid index type: {type(i)}. Must be int, slice, or list of ints.")
-        else:
-            raise TypeError(f"Invalid index type: {type(i)}. Must be int, slice, or list of ints.")
-
-        # Build new dict with sliced lists
-        new_data = [self._series[j] for j in indices]
-        return MassSpectrumSeries(self.name, new_data)
-    
-    def __setitem__(self, key, value):
-        self._series[key] = value
-    
-    def __delitem__(self, key):
-        del self._series[key]
-
-    def __iter__(self):
-        """
-        Iterate over all peaks as Peak instances.
-        """
-        for s in self._series:
-            yield s
-
-    def value_counts(self) -> Counter:
-        """
-        Return a pandas Series with the counts of each unique value in the series.
-        """
-        return Counter(self._series)
