@@ -106,7 +106,7 @@ class Peak:
         """
         self._peak.normalize_intensity(to)
 
-    def assign_formula(self, fragmenter:Fragmenter) -> None:
+    def assign_formula(self, fragmenter) -> None:
         """
         Assigns the closest formula from the given list to each peak within the given m/z tolerance.
 

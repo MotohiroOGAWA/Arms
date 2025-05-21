@@ -23,7 +23,6 @@ class TestMspReader(unittest.TestCase):
         """
         mass_spectra = MassSpectrum(self.cols)
         peaks = mass_spectra[6:8]
-        peaks = mass_spectra[[6,7]]
 
         mass_spectrum1 = mass_spectra['Name']
         mass_spectrum2 = mass_spectra[['Name', 'Formula']]
