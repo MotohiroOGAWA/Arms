@@ -1,6 +1,7 @@
 import unittest
 from lib.ms.MassSpectrum import MassSpectrum
 from lib.ms.Peak import Peak, PeakSeries, PeakEntry, Formula
+from lib.common.structures import NamedField
 
 class TestTemplate(unittest.TestCase):
     def setUp(self):
@@ -41,11 +42,21 @@ class TestTemplate(unittest.TestCase):
         peak.normalize_intensity()
 
     def testPeakSeries(self):
-        peak_series: PeakSeries = self.mass_spectrum[0][:]
+        peak_series: PeakSeries = self.mass_spectrum[0].peaks
         peak_series[0]
         peak_series[[0, 1]]
         peak_series[0:2]
         peak_series.format_peak()
+
+        peak_series.set_metadata(NamedField('Formula', 'Formula'), [None, "C6H12O6", "NH3"])
+        peak_series_str = peak_series.to_str()
+        _peak_series = PeakSeries.parse(peak_series_str)
+        _formulas = _peak_series['Formula']
+        assert _formulas[0] is None, "First formula should be None"
+        assert _formulas[1] == Formula('C6H12O6'), "Second formula should be C6H12O6"
+        assert _formulas[2] == Formula('NH3'), "Third formula should be NH3"
+    
+        pass
 
     def testPeakEntry(self):
         peak_entry: PeakEntry = self.mass_spectrum[0][0]
@@ -59,10 +70,15 @@ class TestTemplate(unittest.TestCase):
 
         # peaks = self.mass_spectrum[0].peaks
         # peaks.assign_formula([formula1, formula2])
-        self.mass_spectrum[0].peaks.assign_formula([formula1, formula2])
-        assigned_formulas = self.mass_spectrum[0].peaks.fragment_formulas
+        self.mass_spectrum[0].peaks.assign_formula([formula1, formula2], column_name='Formula')
+        self.mass_spectrum[0].peaks[0]
+        assigned_formulas = self.mass_spectrum[0].peaks['Formula']
         assert any(formula1 == f for f in assigned_formulas), "Formula assignment failed"
         assert any(formula2 == f for f in assigned_formulas), "Formula assignment failed"
+
+        
+
+
 
 if __name__ == "__main__":
     # cd ~/workspace/mnt/app ; python -m unittest tests. ~

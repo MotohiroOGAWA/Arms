@@ -53,8 +53,8 @@ class MassSpectrum:
             assert 0 <= i < len(self), f"Index {i} out of range for MassSpectrum with {len(self)} peaks."
             if isinstance(self._data["Peak"][i], str):
                 self._data["Peak"][i] = PeakSeries.parse(self._data["Peak"][i])
-            res = {key: value[i] for key, value in self._data.items()}
-            return Peak(res)
+            # res = {key: value[i] for key, value in self._data.items()}
+            return Peak(self._data, i)
         elif isinstance(i, str):
             if i in self._data:
                 indices = [i]
@@ -123,9 +123,11 @@ class MassSpectrum:
         # Create the directory if it doesn't exist
         os.makedirs(os.path.dirname(file), exist_ok=True)
 
-        for i in range(len(self)):
-            if isinstance(self._data["Peak"][i], PeakSeries):
-                self._data["Peak"][i] = self._data["Peak"][i].to_str()
+        original_peaks = self._data["Peak"]
+        self._data["Peak"] = [
+            p.to_str() if isinstance(p, PeakSeries) else p
+            for p in original_peaks
+        ]
 
         # Save as dill file
         with open(file, 'wb') as f:
@@ -134,6 +136,8 @@ class MassSpectrum:
         if preview:
             df = pd.DataFrame(self._data)
             df.head(n=100).to_csv(file + ".preview.tsv", index=False, sep="\t")
+        
+        self._data["Peak"] = original_peaks
 
     @staticmethod
     def load(file:str) -> MassSpectrum:

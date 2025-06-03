@@ -46,7 +46,6 @@ class Fragmenter:
 
         return node
 
-
     def _fragment_all(self, molecule: Molecule) -> Dict[(BondPosition, AdductType), List[Fragment]]:
         
         fragments_by_bond_pos_and_adduct = defaultdict(list)

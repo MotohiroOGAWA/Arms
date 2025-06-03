@@ -70,6 +70,12 @@ class TestFormula(unittest.TestCase):
         self.assertEqual(f.elements, {"C": 10, "H": 18, "O": 5})
         self.assertEqual(f.charge, 0)
 
+    def test_enumerate_possible_sub_formulas(self):
+        f = Formula("C3H8O")
+        sub_formulas = f.get_possible_sub_formulas()
+        self.assertIsInstance(sub_formulas, list)
+        self.assertGreater(len(sub_formulas), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

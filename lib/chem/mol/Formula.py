@@ -6,6 +6,8 @@ from typing import Dict
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 
+from ..utilities.formula_utils import enumerate_possible_sub_formulas
+
 class Formula:
     def __init__(self, formula_str: str = ""):
         # OrderedDict to preserve Hill order: C, H, then alphabetical
@@ -53,6 +55,7 @@ class Formula:
         temp = {}
         for elem, count in matches:
             temp[elem] = temp.get(elem, 0) + (int(count) if count else 1)
+        temp = {k: v for k, v in temp.items() if v != 0}
 
         # Determine Hill order
         keys = temp.keys()
@@ -185,11 +188,26 @@ class Formula:
         
         return formula
 
+    @staticmethod
+    def from_elements(elements: Dict[str, int], charge: int = 0) -> Formula:
+        """
+        Create a Formula object from a dictionary of elements and their counts.
+        """
+        formula = Formula()
+        elements = {k: v for k, v in elements.items() if v != 0}
+
+        # Determine Hill order
+        keys = elements.keys()
+        ordered = Formula._reorder_element_keys(keys)
+
+        # Store in ordered dict
+        formula.elements = OrderedDict((k, elements[k]) for k in ordered)
+        formula.charge = charge
+
+        return formula
+
     def copy(self) -> Formula:
-        new = Formula()
-        new.elements = self.elements.copy()
-        new.charge = self.charge
-        return new
+        return Formula.from_elements(self.elements.copy(), self.charge)
     
     @classmethod
     def from_mol(cls, mol: Chem.Mol) -> Formula:
@@ -199,5 +217,25 @@ class Formula:
         formula_str = rdMolDescriptors.CalcMolFormula(mol)
         return cls(formula_str)
     
+    def get_possible_sub_formulas(self, hydrogen_delta: int = 0) -> Dict[str, float]:
+        """
+        Generate possible sub-formulas with their degree of unsaturation.
+        Returns a dictionary of sub-formula strings and their DBE values.
+        """
+        # Add hydrogen delta to original count
+        elements = self.elements.copy()
+        elements["H"] = elements.get("H", 0) + hydrogen_delta
+        elements["H"] = max(elements["H"], 0)  # prevent negative H count
+
+        res = [
+            Formula.from_elements(elements)
+            for elements, dbe in enumerate_possible_sub_formulas(self.elements)
+        ]
+
+        res = sorted(res, key=lambda f: (f.exact_mass, f.plain))
+
+        return res
+    
+
 
     
