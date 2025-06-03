@@ -107,6 +107,15 @@ class Fragmenter:
             fragment_list_by_adduct[adduct_type].extend(fragment_list)
 
         return fragment_list_by_adduct
+
+    def copy(self) -> Fragmenter:
+        """
+        Create a copy of the current Fragmenter instance.
+
+        Returns:
+            Fragmenter: A new instance with the same adduct_types and max_depth.
+        """
+        return Fragmenter(adduct_types=self.adduct_types, max_depth=self.max_depth)
     
 class FragmentTree:
     """

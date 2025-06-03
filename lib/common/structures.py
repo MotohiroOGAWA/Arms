@@ -15,3 +15,6 @@ class NamedField(str):
 
     def __repr__(self):
         return f"{super().__repr__()}:{self.type}"
+
+    def __reduce__(self):
+        return (self.__class__, (str(self), self.type))

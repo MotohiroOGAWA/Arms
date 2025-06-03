@@ -5,10 +5,13 @@ import os
 from typing import Tuple, Dict, List, overload
 from collections.abc import Sequence
 from collections import Counter
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import dill
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from lib import Molecule
 from .Peak import Peak, PeakSeries
 from ..io.msp_reader import read_msp_file
 
@@ -126,7 +129,7 @@ class MassSpectrum:
         original_peaks = self._data["Peak"]
         self._data["Peak"] = [
             p.to_str() if isinstance(p, PeakSeries) else p
-            for p in original_peaks
+            for p in tqdm(original_peaks, desc="Converting peaks to string")
         ]
 
         # Save as dill file
@@ -158,4 +161,68 @@ class MassSpectrum:
             mass_spectrum.save(save_file, overwrite=overwrite)
             
         return mass_spectrum
-    
+
+    @staticmethod
+    def _process_chunk(chunk_with_indices, fragmenter):
+        try:
+            results = []
+            for i, peak in chunk_with_indices:
+                try:
+                    smiles = peak['SMILES']
+                    molecule = Molecule(smiles)
+                    formula = molecule.formula
+
+                    try:
+                        peak.assign_formula(fragmenter, 'Formula')
+                        assign_cov = peak.peaks.assigned_formula_coverage('Formula')
+                    except Exception:
+                        assign_cov = -1
+
+                    try:
+                        possible_formulas = formula.get_possible_sub_formulas(hydrogen_delta=3)
+                        peak.peaks.assign_formula(possible_formulas, 'PossibleFormula', mode='all')
+                        possible_cov = peak.peaks.assigned_formula_coverage('PossibleFormula')
+                    except Exception:
+                        possible_cov = -1
+
+                except Exception:
+                    assign_cov = -1
+                    possible_cov = -1
+
+                results.append((i, peak.peaks.to_str(), assign_cov, possible_cov))
+            return results
+        except Exception as e:
+            print(f"Error processing chunk: {e}")
+            return []
+
+    def parallel_assign_formula(self, fragmenter, num_workers=4, chunk_size=100, resume=False):
+        n = len(self)
+
+        if not 'AssignFormulaCov' in self:
+            self['AssignFormulaCov'] = [None] * n
+        if not 'PossibleFormulaCov' in self:
+            self['PossibleFormulaCov'] = [None] * n
+
+        indices = list(range(n))
+        if resume:
+            assign_covs = np.asarray(self['AssignFormulaCov'])
+            possible_covs = np.asarray(self['PossibleFormulaCov'])
+            assign_covs = pd.Series(assign_covs).replace({None: np.nan})
+            possible_covs = pd.Series(possible_covs).replace({None: np.nan})
+            mask = (assign_covs.isna() | (assign_covs == -1)) | (possible_covs.isna() | (possible_covs == -1))
+            indices = np.where(mask)[0].tolist()
+
+        chunks = [
+            [(i, self[i].copy()) for i in indices[start:start + chunk_size]]
+            for start in tqdm(range(0, len(indices), chunk_size), desc='Creating chunks')
+        ]
+
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(MassSpectrum._process_chunk, chunk, fragmenter.copy()) for chunk in chunks]
+            for f in tqdm(as_completed(futures), total=len(futures), desc='Assigning formulas'):
+                results = f.result()
+                for i, peaks_str, assign_cov, possible_cov in results:
+                    self[i]['Peak'] = peaks_str
+                    self[i]['AssignFormulaCov'] = assign_cov
+                    self[i]['PossibleFormulaCov'] = possible_cov
+        
