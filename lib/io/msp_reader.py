@@ -109,8 +109,8 @@ def read_msp_file(filepath, encoding='utf-8') -> dict[str, list]:
             for k in cols:
                 del cols[k][-1]
 
-    
-    cols['IdxOri'] = list(range(len(cols['Peak'])))
+    if not 'IdxOri' in cols:
+        cols['IdxOri'] = list(range(len(cols['Peak'])))
 
     if error_text != '':
         from datetime import datetime
