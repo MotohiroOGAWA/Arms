@@ -1,6 +1,7 @@
 import unittest
 from lib.ms.MassSpectrum import MassSpectrum
-from lib.ms.Peak import Peak, PeakSeries, PeakEntry, Formula
+from lib.ms.Peak import Peak
+from lib.ms.PeakSeries import PeakSeries, PeakEntry, Formula
 from lib.common.structures import NamedField
 
 class TestTemplate(unittest.TestCase):

@@ -4,7 +4,6 @@ import os
 
 from typing import Tuple, Dict, List, overload
 from collections.abc import Sequence
-from collections import Counter
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -13,6 +12,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from lib import Molecule
 from .Peak import Peak, PeakSeries
+from .PeakConditions import PeakCondition
 from ..io.msp_reader import read_msp_file
 
 class MassSpectrum:
@@ -225,4 +225,55 @@ class MassSpectrum:
                     self[i]['Peak'] = peaks_str
                     self[i]['AssignFormulaCov'] = assign_cov
                     self[i]['PossibleFormulaCov'] = possible_cov
-        
+
+    def peaks_any(self, *conditions: PeakCondition, progress: bool = False) -> MassSpectrum:
+        """
+        Return a new MassSpectrum containing only spectra whose PeakSeries satisfies
+        at least one of the provided conditions.
+
+        Parameters:
+            *conditions (PeakCondition): One or more conditions to evaluate.
+            progress (bool): Whether to show a progress bar. Default is False.
+
+        Returns:
+            MassSpectrum: A new MassSpectrum with spectra satisfying any of the conditions.
+        """
+        assert all(isinstance(c, PeakCondition) for c in conditions), \
+            "All arguments must be instances of PeakCondition"
+
+        iterator = range(len(self))
+        if progress:
+            iterator = tqdm(iterator, desc="Filtering spectra")
+
+        indices = [
+            i for i in iterator
+            if self[i].peaks.any(*conditions)
+        ]
+
+        return self[indices]
+    
+    def peaks_all(self, *conditions: PeakCondition, progress: bool = False) -> MassSpectrum:
+        """
+        Return a new MassSpectrum containing only spectra where all given conditions 
+        are satisfied by the corresponding PeakSeries.
+
+        Parameters:
+            *conditions (PeakCondition): One or more conditions to evaluate.
+            progress (bool): Whether to show a progress bar during filtering.
+
+        Returns:
+            MassSpectrum: A new MassSpectrum object with filtered spectra.
+        """
+        assert all(isinstance(c, PeakCondition) for c in conditions), \
+            "All conditions must be instances of PeakCondition"
+
+        iterator = range(len(self))
+        if progress:
+            iterator = tqdm(iterator, desc="Filtering spectra (all conditions)")
+
+        indices = [
+            i for i in iterator
+            if self[i].peaks.all(*conditions)
+        ]
+
+        return self[indices]
