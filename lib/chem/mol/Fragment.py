@@ -3,7 +3,7 @@ from typing import Union, List
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import ResonanceMolSupplier, ResonanceFlags
-from collections import Counter, OrderedDict
+from collections import Counter, deque
 
 from .Molecule import Molecule
 from .Atom import Atom
@@ -77,37 +77,177 @@ class Fragment:
         total_valence = connected_atom.GetTotalValence()
         fragmented_valence = total_valence - 1  # Assume one bond is missing
 
-        is_stable = Atom.is_stable(symbol, charge, fragmented_valence)
-        if not is_stable:
-            if symbol == "C":
-                connected_atom.SetFormalCharge(+1)
-                rw_mol.RemoveAtom(dummy_idx)
-                m = rw_mol.GetMol()
-                suppl = ResonanceMolSupplier(m, ResonanceFlags.KEKULE_ALL)
-                for s in suppl:
-                    is_stable = all(Atom.is_stable(atom.GetSymbol(), atom.GetFormalCharge(), atom.GetTotalValence()) for atom in s.GetAtoms())
-                    total_charge = sum(atom.GetFormalCharge() for atom in s.GetAtoms())
-                    if is_stable and abs(total_charge) <= 1:
-                        m = s
-                        break
-                        
-                self.stable_mol = Molecule(m)
+        # is_stable = Atom.is_stable(symbol, charge, fragmented_valence)
+        total_charge = sum(atom.GetFormalCharge() for atom in rw_mol.GetAtoms())
 
-            elif symbol in ["O", "N", "F", "Cl", "Br", "I"]:
-                rw_mol.RemoveAtom(dummy_idx)
-                idx = connected_atom.GetIdx()
-                h_idx = rw_mol.AddAtom(Chem.Atom(1))  # H atom
-                rw_mol.AddBond(idx, h_idx, Chem.BondType.SINGLE)
-                m = Chem.RemoveHs(rw_mol)
-                suppl = ResonanceMolSupplier(m, ResonanceFlags.KEKULE_ALL)
-                if len(suppl) > 0:
-                    m = suppl[0]
-                self.stable_mol = Molecule(m)
-                if self.stable_mol.charge == 0:
-                    self._add_proton_adduct_in(1)
+        if (total_charge == 0) and (symbol == "C"):
+            rw_mol.RemoveAtom(dummy_idx)
+            connected_atom.SetFormalCharge(+1)
+            routes = self._find_all_charge_shift_path(rw_mol, connected_atom.GetIdx())
+            rw_mol = self._shift_charge_along_path(rw_mol, routes[0]["path"])
+            m = rw_mol.GetMol()
+                    
+            self.stable_mol = Molecule(m)
 
+        elif symbol in ["C", "O", "N", "F", "Cl", "Br", "I"]:
+            rw_mol.RemoveAtom(dummy_idx)
+            idx = connected_atom.GetIdx()
+            h_idx = rw_mol.AddAtom(Chem.Atom(1))  # H atom
+            rw_mol.AddBond(idx, h_idx, Chem.BondType.SINGLE)
+            m = Chem.RemoveHs(rw_mol)
+            self.stable_mol = Molecule(m)
+
+        else:
+            raise NotImplementedError(f"Reconstruction not implemented for atom type: {symbol}")
+
+        if self.stable_mol.charge == 0:
+            if self._adduct_type == AdductType.M_PLUS_H_POS:
+                self._add_proton_adduct_in(1)
             else:
-                raise NotImplementedError(f"Reconstruction not implemented for atom type: {symbol}")
+                raise NotImplementedError(
+                    f"reconstruct_single_bond_fragment: Unsupported adduct type '{self._adduct_type}' for stable molecule with no charge."
+                )
+
+
+    def _find_all_charge_shift_path(self, rw_mol: Chem.RWMol, start_idx: int) -> List[int]:
+        start_atom = rw_mol.GetAtomWithIdx(start_idx)
+        if start_atom.GetFormalCharge() == 0:
+            return 
+        
+        if start_atom.GetSymbol() == "O":
+            return
+        if start_atom.GetSymbol() == "N":
+            return
+        
+        queue = deque([(start_idx, [start_idx])])  # (current index, path)
+        completed_paths = [{
+            "path": [start_idx],
+            "symbol": start_atom.GetSymbol(),
+            "carbon_degree": sum(1 for n in start_atom.GetNeighbors() if n.GetSymbol() == "C")
+        }]
+        while queue:
+            current_idx, path = queue.popleft()
+
+            current_atom = rw_mol.GetAtomWithIdx(current_idx)
+            
+            for neighbor in current_atom.GetNeighbors():
+                neighbor_idx = neighbor.GetIdx()
+                if neighbor_idx in path:
+                    continue
+                
+                bond = rw_mol.GetBondBetweenAtoms(current_idx, neighbor_idx)
+                if neighbor.GetSymbol() in ["O", "N"] \
+                    and bond.GetBondType() in [Chem.BondType.SINGLE, Chem.BondType.DOUBLE, Chem.BondType.AROMATIC]:
+                    carbon_degree = sum(1 for n in neighbor.GetNeighbors() if n.GetSymbol() == "C")
+                    completed_paths.append({
+                        "path": path + [neighbor_idx],
+                        "symbol": neighbor.GetSymbol(),
+                        "carbon_degree": carbon_degree
+                    })
+                    continue
+                
+                elif (bond.GetBondType() == Chem.BondType.SINGLE or bond.GetBondType() == Chem.BondType.AROMATIC)\
+                    and neighbor.GetSymbol() == "C"\
+                          and neighbor.GetHybridization() == Chem.rdchem.HybridizationType.SP2:
+                    # If the neighbor is a carbon with SP2 hybridization, continue the search
+                    for next_neighbor in neighbor.GetNeighbors():
+                        next_idx = next_neighbor.GetIdx()
+                        if next_idx == current_idx:
+                            continue
+
+                        next_bond = rw_mol.GetBondBetweenAtoms(neighbor_idx, next_idx)
+                        if (next_bond.GetBondType() == Chem.BondType.DOUBLE or next_bond.GetBondType() == Chem.BondType.AROMATIC)\
+                              and next_neighbor.GetSymbol() == "C":
+                            queue.append((next_idx, path + [neighbor_idx, next_idx]))
+                            completed_paths.append({
+                                "path": path + [neighbor_idx, next_idx],
+                                "symbol": next_neighbor.GetSymbol(),
+                                "carbon_degree": sum(1 for n in next_neighbor.GetNeighbors() if n.GetSymbol() == "C")
+                            })
+
+        # Sort the completed paths based on priority:
+        # 1. Prioritize symbols "O" and "N" over "C"
+        # 2. Prefer higher carbon degree
+        # 3. Prefer shorter paths
+        def priority(entry):
+            # Assign lower priority value to "O" and "N", higher to "C", and highest to others
+            symbol_priority = 0 if entry["symbol"] in ["O", "N"] else (1 if entry["symbol"] == "C" else 2)
+            return (
+                symbol_priority,               # Lower is better (O/N preferred)
+                -entry["carbon_degree"],       # Higher carbon degree is better
+                len(entry["path"])             # Shorter path is better
+            )
+
+        # Apply sorting based on the defined priority
+        completed_paths = sorted(completed_paths, key=priority)
+        return completed_paths
+
+    def _shift_charge_along_path(self, rw_mol: Chem.RWMol, path: List[int]):
+        if len(path) < 2:
+            return rw_mol # Cannot shift with a single atom
+
+        current_i = 0
+        while current_i < len(path) - 1:
+            src_idx = path[current_i]
+            dst_idx = path[current_i + 1]
+
+            bond = rw_mol.GetBondBetweenAtoms(src_idx, dst_idx)
+            src_atom = rw_mol.GetAtomWithIdx(src_idx)
+            dst_atom = rw_mol.GetAtomWithIdx(dst_idx)
+
+            if src_atom.GetSymbol() == 'C' and src_atom.GetFormalCharge() == 1:
+                if dst_atom.GetSymbol() == 'C' \
+                    and dst_atom.GetFormalCharge() == 0 \
+                        and bond.GetBondType() in [Chem.BondType.SINGLE, Chem.BondType.AROMATIC]:
+                    
+                    nbr_idx = path[current_i + 2]
+                    nbr_atom = rw_mol.GetAtomWithIdx(nbr_idx)
+                    nbr_bond = rw_mol.GetBondBetweenAtoms(dst_idx, nbr_idx)
+                    if nbr_atom.GetSymbol() == 'C' \
+                        and nbr_atom.GetFormalCharge() == 0 \
+                            and nbr_bond.GetBondType() in [Chem.BondType.DOUBLE, Chem.BondType.AROMATIC]:
+                        # C+–C=C → C=C–C+
+                        rw_mol.RemoveBond(src_idx, dst_idx)
+                        rw_mol.RemoveBond(dst_idx, nbr_idx)
+                        src_atom.SetFormalCharge(0)
+                        nbr_atom.SetFormalCharge(1)
+                        rw_mol.AddBond(dst_idx, nbr_idx, Chem.BondType.SINGLE)
+                        rw_mol.AddBond(src_idx, dst_idx, Chem.BondType.DOUBLE)
+                        
+                        current_i += 2
+                    else:
+                        raise NotImplementedError(
+                            f"Charge shift not implemented for bond type {bond.GetBondType()} between {src_atom.GetSymbol()} and {dst_atom.GetSymbol()}"
+                        )
+                elif dst_atom.GetSymbol() in ['O', 'N'] \
+                    and dst_atom.GetFormalCharge() == 0:
+                    # C+–O → C=O+
+                    if bond.GetBondType() in [Chem.BondType.SINGLE, Chem.BondType.AROMATIC]:
+                        _bond_type = Chem.BondType.DOUBLE
+                    elif bond.GetBondType() == Chem.BondType.DOUBLE:
+                        _bond_type = Chem.BondType.TRIPLE
+                    else:
+                        raise NotImplementedError(
+                            f"Charge shift not implemented for bond type {bond.GetBondType()} between {src_atom.GetSymbol()} and {dst_atom.GetSymbol()}"
+                        )
+                
+                    rw_mol.RemoveBond(src_idx, dst_idx)
+                    src_atom.SetFormalCharge(0)
+                    dst_atom.SetFormalCharge(1)
+                    rw_mol.AddBond(src_idx, dst_idx, _bond_type)
+                    current_i += 1
+
+                else:
+                    raise NotImplementedError(
+                        f"Charge shift not implemented for bond type {bond.GetBondType()} between {src_atom.GetSymbol()} and {dst_atom.GetSymbol()}"
+                    )
+            else:
+                raise NotImplementedError(
+                    f"Charge shift not implemented for atom {src_atom.GetSymbol()} with charge {src_atom.GetFormalCharge()}"
+                )
+        Chem.SanitizeMol(rw_mol)
+        return rw_mol
+
 
     def _reset_adducts(self):
         """

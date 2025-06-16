@@ -8,7 +8,14 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import dill
+from copy import deepcopy
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
+import signal
+class TimeoutException(Exception):
+    pass
+def timeout_handler(signum, frame):
+    raise TimeoutException("Operation timed out")
 
 from lib import Molecule
 from .Peak import Peak, PeakSeries
@@ -162,40 +169,54 @@ class MassSpectrum:
             
         return mass_spectrum
 
+    def copy(self) -> MassSpectrum:
+        """
+        Return a deep copy of the MassSpectrum object.
+        """
+        return MassSpectrum(deepcopy(self._data))
+
     @staticmethod
-    def _process_chunk(chunk_with_indices, fragmenter):
-        try:
-            results = []
-            for i, peak in chunk_with_indices:
+    def _process_chunk(chunk_with_indices, fragmenter, timeout_seconds=10):
+        signal.signal(signal.SIGALRM, timeout_handler)
+
+        results = []
+        for i, peak in chunk_with_indices:
+            try:
+                signal.alarm(timeout_seconds)  # Set timeout
+
+                smiles = peak['SMILES']
+                molecule = Molecule(smiles)
+                formula = molecule.formula
+
                 try:
-                    smiles = peak['SMILES']
-                    molecule = Molecule(smiles)
-                    formula = molecule.formula
-
-                    try:
-                        peak.assign_formula(fragmenter, 'Formula')
-                        assign_cov = peak.peaks.assigned_formula_coverage('Formula')
-                    except Exception:
-                        assign_cov = -1
-
-                    try:
-                        possible_formulas = formula.get_possible_sub_formulas(hydrogen_delta=3)
-                        peak.peaks.assign_formula(possible_formulas, 'PossibleFormula', mode='all')
-                        possible_cov = peak.peaks.assigned_formula_coverage('PossibleFormula')
-                    except Exception:
-                        possible_cov = -1
-
+                    peak.assign_formula(fragmenter, 'Formula')
+                    assign_cov = peak.peaks.assigned_formula_coverage('Formula')
                 except Exception:
                     assign_cov = -1
+
+                try:
+                    possible_formulas = formula.get_possible_sub_formulas(hydrogen_delta=3)
+                    peak.peaks.assign_formula(possible_formulas, 'PossibleFormula', mode='all')
+                    possible_cov = peak.peaks.assigned_formula_coverage('PossibleFormula')
+                except Exception:
                     possible_cov = -1
 
-                results.append((i, peak.peaks.to_str(), assign_cov, possible_cov))
-            return results
-        except Exception as e:
-            print(f"Error processing chunk: {e}")
-            return []
+            except TimeoutException as e:
+                # print(f"Timeout for index {i}: {e}")
+                assign_cov = -2
+                possible_cov = -2
+            except Exception as e:
+                # print(f"Error for index {i}: {e}")
+                assign_cov = -1
+                possible_cov = -1
+            finally:
+                signal.alarm(0)  # Cancel alarm
 
-    def parallel_assign_formula(self, fragmenter, num_workers=4, chunk_size=100, resume=False):
+            results.append((i, peak.peaks.to_str(), assign_cov, possible_cov))
+
+        return results
+
+    def parallel_assign_formula(self, fragmenter, num_workers=4, chunk_size=100, resume=False, timeout_seconds=10):
         n = len(self)
 
         if not 'AssignFormulaCov' in self:
@@ -218,7 +239,7 @@ class MassSpectrum:
         ]
 
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            futures = [executor.submit(MassSpectrum._process_chunk, chunk, fragmenter.copy()) for chunk in chunks]
+            futures = [executor.submit(MassSpectrum._process_chunk, chunk, fragmenter.copy(), timeout_seconds) for chunk in chunks]
             for f in tqdm(as_completed(futures), total=len(futures), desc='Assigning formulas'):
                 results = f.result()
                 for i, peaks_str, assign_cov, possible_cov in results:
@@ -277,3 +298,4 @@ class MassSpectrum:
         ]
 
         return self[indices]
+    
