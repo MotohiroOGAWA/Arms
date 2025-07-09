@@ -13,6 +13,8 @@ class Formula:
         # OrderedDict to preserve Hill order: C, H, then alphabetical
         self.elements: Dict[str, int] = OrderedDict()
         self.charge: int = 0
+        self.raw_formula: str = ""
+
         if formula_str:
             self._parse_formula(formula_str)
 
@@ -35,7 +37,7 @@ class Formula:
         return self.to_string(no_charge=False)
     
     def __hash__(self) -> int:
-        return hash((frozenset(self.elements.items()), self.charge))
+        return hash((frozenset(self.elements.items()), self.raw_formula, self.charge))
 
     def _parse_formula(self, formula: str):
         """
@@ -49,6 +51,8 @@ class Formula:
             self.charge = int(charge_str[1:]) if charge_str[1:] else 1
             if charge_str[0] == '-':
                 self.charge *= -1
+
+        self.raw_formula = formula  # Store the raw formula for reference
 
         # Parse element counts
         matches = re.findall(r"([A-Z][a-z]?)(\d*)", formula)
@@ -81,6 +85,8 @@ class Formula:
 
         for elem, count in other.elements.items():
             combined[elem] = combined.get(elem, 0) - count
+            if combined[elem] < 0:
+                raise ValueError(f"Cannot subtract {other} from {self}: negative element count for {elem}")
 
         result.charge = self.charge - other.charge
         result._reorder_elements(combined)
@@ -106,7 +112,7 @@ class Formula:
         """
         return self.to_string(no_charge=True)
 
-    def diff(self, other: Formula) -> str:
+    def diff(self, other: Formula) -> tuple[OrderedDict[str, int], int]:
         """
         Return a human-readable string showing the difference between self and other.
         Example: +H2-C

@@ -1,6 +1,7 @@
 from typing import Dict, List, OrderedDict, Literal
 import re
 from rdkit import Chem
+from collections import defaultdict
 from ..chem.mol.Formula import Formula
 from ..ms.utilities import charge_from_str
 
@@ -8,8 +9,13 @@ class Adduct:
     """
     Class representing an adduct ion.
     """
-
-    def __init__(self, mode: Literal["M", "F"], element_diff: Dict[str, int], charge_diff: int):
+    def __init__(
+            self, 
+            mode: Literal["M", "F"], 
+            adducts_in: List[Formula] = [], 
+            adducts_out: List[Formula] = [], 
+            charge_diff: int = 0
+            ):
         """
         Initialize an adduct with element differences and charge difference.
         
@@ -19,29 +25,28 @@ class Adduct:
             charge_diff (int): Charge difference.
         """
         self.mode = mode
-
-        element_diff = OrderedDict({k: element_diff[k] for k in Formula._reorder_element_keys(element_diff.keys()) if element_diff[k] != 0})
-                
-        self._element_diff = element_diff
-        self._charge_diff = charge_diff
-
-        # Calculate the exact mass shift of the adduct
-        mass = 0.0
-        for elem, count in element_diff.items():
-            atomic_number = Chem.GetPeriodicTable().GetAtomicNumber(elem)
-            mass += Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atomic_number) * count
-        self.exact_mass = mass
-
+        formula_count_in: dict[str, int] = defaultdict(int)
+        charge = 0
+        for f in adducts_in:
+            formula_count_in[f.raw_formula] += 1
+            charge += f.charge
+        for f in adducts_out:
+            formula_count_in[f.raw_formula] -= 1
+            charge -= f.charge
+        
+        self._adduct_formulas: dict[Formula, int] = {Formula(f): cnt for f, cnt in formula_count_in.items()}
+        self.charge = charge + charge_diff
 
     @property
-    def charge(self) -> int:
+    def mass_shift(self) -> float:
         """
-        Get the charge of the adduct.
+        Get the mass shift of the adduct.
         
         Returns:
-            str: Charge of the adduct.
+            float: Mass shift of the adduct.
         """
-        return self._charge_diff
+        total_mass = sum(f.exact_mass * cnt for f, cnt in self._adduct_formulas.items() if cnt != 0)
+        return total_mass
     
     def __repr__(self) -> str:
         """
@@ -59,31 +64,55 @@ class Adduct:
         Returns:
             str: String representation of the adduct.
         """
-        adduct_str = ""
-                
-        for elem, count in self._element_diff.items():
-            if count > 0:
-                adduct_str += f"+{count}{elem}" if count > 1 else f"+{elem}"
-            elif count < 0:
-                adduct_str += f"{count}{elem}" if count < -1 else f"-{elem}"
+        parts = []
+        for f, cnt in sorted(self._adduct_formulas.items(), key=lambda x: (-x[0].exact_mass, x[0].raw_formula)):
+            if cnt > 0:
+                parts.append(f"+{cnt if cnt > 1 else ''}{f.raw_formula}")
+            elif cnt < 0:
+                parts.append(f"-{abs(cnt) if cnt < -1 else ''}{f.raw_formula}")
+        body = "".join(parts)
 
-        # Decide overall charge
-        if self._charge_diff > 0:
-            charge = f"+{self._charge_diff}" if self._charge_diff > 1 else "+"
-        elif self._charge_diff < 0:
-            charge = f"{self._charge_diff}" if self._charge_diff < -1 else "-"
+        if self.charge > 0:
+            charge = f"+{self.charge}" if self.charge > 1 else "+"
+        elif self.charge < 0:
+            charge = f"{self.charge}" if self.charge < -1 else "-"
         else:
             charge = ""
-
-        return  f"[{self.mode}{adduct_str}]{charge}"
+            
+        return f"[{self.mode}{body}]{charge}"
     
     def __eq__(self, value):
-        self.__str__() == str(value)
+        return self.__str__() == str(value)
+    
+    def __hash__(self):
+        """
+        Get the hash of the adduct.
+        
+        Returns:
+            int: Hash of the adduct.
+        """
+        return hash(self.__str__())
+    
+    def copy(self) -> "Adduct":
+        """
+        Create a copy of the adduct.
+        
+        Returns:
+            Adduct: A new Adduct instance with the same properties.
+        """
+        adduct = Adduct(
+            mode=self.mode,
+            adducts_in=[f.copy() for f in self._adduct_formulas.keys() if self._adduct_formulas[f] > 0],
+            adducts_out=[f.copy() for f in self._adduct_formulas.keys() if self._adduct_formulas[f] < 0],
+            charge_diff=0
+        )
+        adduct.charge = self.charge
+        return adduct
 
     @staticmethod
     def from_str(adduct_str: str) -> "Adduct":
         """
-        Parse an adduct string like "[M+H]+", "[M+2Na-H]-" into an Adduct object.
+        Parse an adduct string like "[M+HCOOH-H]-" into Adduct(adducts_in=[HCOOH], adducts_out=[H]).
 
         Args:
             adduct_str (str): The adduct string.
@@ -93,23 +122,43 @@ class Adduct:
         """
         assert adduct_str.startswith("[") and "]" in adduct_str, f"Invalid adduct format: {adduct_str}"
 
-        # extract content inside brackets and the final charge
+        # Extract inner content and charge symbol
         main, charge_part = adduct_str[1:].split("]")
-        mode = main[0]  # 'M' or 'F'
-        remainder = main[1:]  # e.g., '+H', '+2Na-H'
-
-        # charge part: '+' or '+2' or '-' etc.
+        mode = main[0]
+        remainder = main[1:]
         charge = charge_from_str(charge_part)
 
-        # parse element differences using regex
-        # pattern: +H, -H, +2Na, -2H2O etc.
-        pattern = re.compile(r'([+-])(\d*)([A-Z][a-z]?[0-9]*)')
-        element_diff: Dict[str, int] = {}
+        # Regex to capture: +H, -H, +2Na, -2HCOOH etc.
+        pattern = re.compile(r'([+-])(\d*)([A-Z][a-zA-Z0-9]*)')
+        adducts_in = []
+        adducts_out = []
 
-        for sign, num, elem in pattern.findall(remainder):
+        for sign, num, formula_str in pattern.findall(remainder):
             count = int(num) if num else 1
-            count = count if sign == '+' else -count
-            element_diff[elem] = element_diff.get(elem, 0) + count
+            formulas = [Formula(formula_str) for _ in range(count)]
 
-        return Adduct(mode=mode, element_diff=element_diff, charge_diff=charge)
-                    
+            if sign == "+":
+                adducts_in.extend(formulas)
+            else:
+                adducts_out.extend(formulas)
+
+        tmp = Adduct(mode=mode, adducts_in=adducts_in, adducts_out=adducts_out)
+        charge_diff = charge - tmp.charge
+
+        return Adduct(mode=mode, adducts_in=adducts_in, adducts_out=adducts_out, charge_diff=charge_diff)
+    
+    @property
+    def element_diff(self) -> dict[str, int]:
+        """
+        Return the total difference in element counts caused by the adduct.
+        
+        Returns:
+            dict[str, int]: Dictionary of element symbol to count (can be negative).
+        """
+        total: dict[str, int] = defaultdict(int)
+
+        for formula, count in self._adduct_formulas.items():
+            for elem, elem_count in formula.elements.items():
+                total[elem] += elem_count * count
+
+        return dict(total)

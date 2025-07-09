@@ -83,5 +83,5 @@ class TestTemplate(unittest.TestCase):
 
 if __name__ == "__main__":
     # cd ~/workspace/mnt/app ; python -m unittest tests. ~
-    # unittest.main()
+    unittest.main()
     pass

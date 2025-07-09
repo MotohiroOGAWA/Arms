@@ -176,21 +176,24 @@ class MassSpectrum:
         return MassSpectrum(deepcopy(self._data))
 
     @staticmethod
-    def _process_chunk(chunk_with_indices, fragmenter, timeout_seconds=10):
-        signal.signal(signal.SIGALRM, timeout_handler)
+    def _process_chunk(chunk_with_indices: List[Tuple[int, Peak]], fragmenter, timeout_seconds=10):
+        # signal.signal(signal.SIGALRM, timeout_handler)
 
         results = []
         for i, peak in chunk_with_indices:
             try:
-                signal.alarm(timeout_seconds)  # Set timeout
+                # signal.alarm(timeout_seconds)  # Set timeout
 
                 smiles = peak['SMILES']
                 molecule = Molecule(smiles)
                 formula = molecule.formula
 
                 try:
-                    peak.assign_formula(fragmenter, 'Formula')
+                    peak.assign_formula(fragmenter, 'Formula', timeout_seconds=timeout_seconds)
                     assign_cov = peak.peaks.assigned_formula_coverage('Formula')
+                except TimeoutException:
+                    print(f"Timeout for index {i}")
+                    assign_cov = -2
                 except Exception:
                     assign_cov = -1
 
@@ -201,16 +204,17 @@ class MassSpectrum:
                 except Exception:
                     possible_cov = -1
 
-            except TimeoutException as e:
-                # print(f"Timeout for index {i}: {e}")
-                assign_cov = -2
-                possible_cov = -2
+            # except TimeoutException as e:
+            #     # print(f"Timeout for index {i}: {e}")
+            #     assign_cov = -2
+            #     possible_cov = -2
             except Exception as e:
                 # print(f"Error for index {i}: {e}")
                 assign_cov = -1
                 possible_cov = -1
             finally:
-                signal.alarm(0)  # Cancel alarm
+                # signal.alarm(0)  # Cancel alarm
+                pass
 
             results.append((i, peak.peaks.to_str(), assign_cov, possible_cov))
 

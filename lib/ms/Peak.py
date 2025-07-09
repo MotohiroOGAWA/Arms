@@ -114,7 +114,7 @@ class Peak:
         self._peak.normalize_intensity(to)
 
 
-    def assign_formula(self, fragmenter, column_name:str, mz_tol=MIN_ABS_TOLERANCE) -> None:
+    def assign_formula(self, fragmenter, column_name:str, mz_tol=MIN_ABS_TOLERANCE, timeout_seconds:float = float('inf')) -> None:
         """
         Assigns formulas to the peaks using a fragmenter.
 
@@ -122,10 +122,11 @@ class Peak:
             formulas (List[Formula]): A list of Formula objects to assign.
             column_name (str): Metadata key to store assigned formulas.
             mz_tol (float): Maximum allowed absolute m/z difference to consider a match.
+            timeout_seconds (float): Maximum time to spend on fragmenting the molecule.
         """
         smiles = self["SMILES"]
         molecule = Molecule(smiles)
-        fragment_tree = fragmenter.create_fragment_tree(molecule)
+        fragment_tree = fragmenter.create_fragment_tree(molecule, timeout_seconds=timeout_seconds)
 
         formulas = fragment_tree.get_all_formulas()
         
