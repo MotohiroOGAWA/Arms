@@ -1,0 +1,3 @@
+[submodule "cores/MassEntity"]
+	path = cores/MassEntity
+	url = https://github.com/MotohiroOGAWA/MassEntity.git
