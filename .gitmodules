@@ -1,3 +1,6 @@
 [submodule "cores/MassEntity"]
 	path = cores/MassEntity
 	url = https://github.com/MotohiroOGAWA/MassEntity.git
+[submodule "cores/MassMolKit"]
+	path = cores/MassMolKit
+	url = https://github.com/MotohiroOGAWA/MassMolKit.git
