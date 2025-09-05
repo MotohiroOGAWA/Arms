@@ -17,18 +17,15 @@
 # %%
 import sys
 import os
+from constants import *
 
-from pathlib import Path
-current_dir = Path().resolve()
-
-root_dir = str(Path(current_dir).parents[1])
 print(f'Root: {root_dir}')
 sys.path.append(root_dir)
 
 # %%
 ion_mode = 'negative'  # 'positive' or 'negative'
-msp_file = os.path.join(root_dir, 'data', 'raw', 'MoNA', ion_mode, 'MoNA-export-LC-MS-MS_' + ion_mode.capitalize() + '_Mode.msp')
-hdf5_file = os.path.join(os.path.dirname(msp_file), f'mona_{ion_mode}.hdf5')
+msp_file = get_mona_msp_file(ion_mode)
+hdf5_file = get_mona_hdf5_file(ion_mode)
 
 # %%
 from cores.MassEntity.MassEntityCore import MSDataset
