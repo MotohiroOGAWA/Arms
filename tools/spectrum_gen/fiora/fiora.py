@@ -1,4 +1,4 @@
-from .base import SpectrumGenerator
+from ..base import SpectrumGenerator
 
 
 
