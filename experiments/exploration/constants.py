@@ -7,8 +7,12 @@ import pandas as pd
 current_dir = Path().resolve()
 root_dir = str(Path(current_dir).parents[1])
 
+def get_mona_dir(ion_mode:Literal['positive', 'negative']) -> str:
+    mona_dir = os.path.join(root_dir, 'data', 'raw', 'MoNA', ion_mode)
+    return mona_dir
+
 def get_mona_msp_file(ion_mode:Literal['positive', 'negative']) -> str:
-    msp_file = os.path.join(root_dir, 'data', 'raw', 'MoNA', ion_mode, 'MoNA-export-LC-MS-MS_' + ion_mode.capitalize() + '_Mode.msp')
+    msp_file = os.path.join(get_mona_dir(ion_mode), 'MoNA-export-LC-MS-MS_' + ion_mode.capitalize() + '_Mode.msp')
     return msp_file
 
 def get_mona_hdf5_file(ion_mode:Literal['positive', 'negative']) -> str:

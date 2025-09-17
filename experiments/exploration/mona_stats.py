@@ -31,7 +31,7 @@ hdf5_file = get_mona_hdf5_file(ion_mode)
 from cores.MassEntity.MassEntityCore import MSDataset
 from cores.MassEntity.MassEntityIO import msp
 
-from cores.MassMolKit.mol.utilities import to_canonical_smiles
+from cores.MassMolKit.Mol.utilities import to_canonical_smiles
 
 def canonical_map(smiles_list):
     smi_to_canonical = {}
