@@ -9,8 +9,12 @@ from cores.MassMolKit.Mol.Formula import Formula
 from cores.MassMolKit.Mol.formula_utils import get_possible_sub_formulas
 from cores.MassMolKit.Mol.Compound import Compound
 from cores.MassMolKit.MS.AdductIon import AdductIon
+from cores.MassMolKit.MS.constants import AdductType
 from cores.MassMolKit.Fragment.Fragmenter import Fragmenter
 from cores.MassEntity.MassEntityCore.MSDataset import MSDataset, SpectrumRecord
+
+from ..parallel.dataset_executor import *
+from ..parallel.run_parallel import *
 
 
 def _process_assign_formula_chunk(
@@ -19,12 +23,13 @@ def _process_assign_formula_chunk(
     timeout_seconds: int = 10,
 ) -> Dict[str, Union[List[AdductIon], int]]:
     results = {}
-    for smi in chunk_with_smiles:
+    for smi in tqdm(chunk_with_smiles):
+    # for smi in chunk_with_smiles:
         try:
             try:
                 compound = Compound.from_smiles(smi)
                 if fragmenter is None:
-                    formula_list = get_possible_sub_formulas(compound.formula)
+                    formula_list = get_possible_sub_formulas(compound.formula, hydrogen_delta=3)
                     results[smi] = {str(formula): str(formula) for formula in formula_list}
                 else:
                     tree = fragmenter.create_fragment_tree(compound, timeout_seconds=timeout_seconds)
@@ -45,12 +50,11 @@ def _process_assign_formula_chunk(
     return results
 
 
-def parallel_assign_formula(
-    dataset: MSDataset,
-    fragmenter: Fragmenter,
-    mass_tolerance: float,
-    num_workers: int = 4,
-    chunk_size: int = 100,
+def assign_formula(
+    input_file: str,
+    output_file: str,
+    fragmenter: Fragmenter = None,
+    mass_tolerance: float = 0.01,
     resume: bool = False,
     timeout_seconds: int = 10,
     smiles_column: str = "SMILES",
@@ -80,7 +84,8 @@ def parallel_assign_formula(
         cov_value_column = "FragFormulaCov"
         assign_column = "FragFormula"
 
-    n = len(dataset)
+    dataset = MSDataset.from_hdf5(input_file)
+
     if cov_value_column not in dataset._columns:
         dataset[cov_value_column] = None
 
@@ -105,97 +110,148 @@ def parallel_assign_formula(
 
     # --- Step 3: chunking by SMILES ---
     unique_smiles = list(smi_to_indices.keys())
-    chunks = [
-        unique_smiles[start:start + chunk_size]
-        for start in tqdm(range(0, len(unique_smiles), chunk_size), desc="Creating chunks")
-    ]
 
-    # --- Step 4: parallel execution ---
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = [
-            executor.submit(
-                _process_assign_formula_chunk,
-                chunk,
-                fragmenter.copy() if fragmenter is not None else None,
-                timeout_seconds,
-            )
-            for chunk in chunks
-        ]
-        with tqdm(total=len(futures), desc="Assigning formulas") as pbar:
-            for f in as_completed(futures):
-                results = f.result()
-                for smi, adduct_ions_dict in results.items():
-                    indices = smi_to_indices[smi]
-                    assigned_list = None
-                    if fragmenter is None:
-                        if isinstance(adduct_ions_dict, dict):
-                            assigned_list = [Formula.parse(formula_str) for formula_str in adduct_ions_dict.keys()]
-                    else:
-                        assigned_list: List[AdductIon] = []
-                        if isinstance(adduct_ions_dict, dict):
-                            for adduct_ions_str in adduct_ions_dict.values():
-                                assigned_list.extend([
-                                    AdductIon.parse(adduct_str)
-                                    for adduct_str in adduct_ions_str.split(',')
-                                ])
-                    for i in indices:
-                        if assigned_list is not None:
-                            match_formulas_to_peaks(
-                                dataset[i],
-                                assigned_list,
-                                mass_tolerance=mass_tolerance,
-                                cov_value_column=cov_value_column,
-                                assign_column=assign_column,
-                            )
-                pbar.update(1)
-            pass
+    # --- Step 4: execution ---
+    results = _process_assign_formula_chunk(unique_smiles, fragmenter.copy() if fragmenter is not None else None, timeout_seconds)
 
-def match_formulas_to_peaks(
-    spectrum_record: SpectrumRecord,
-    assigned_list: Union[List[Formula], List[AdductIon]],
+    for smi, adduct_ions_dict in results.items():
+        indices = smi_to_indices[smi]
+        assigned_list = None
+        if fragmenter is None:
+            if isinstance(adduct_ions_dict, dict):
+                assigned_list = [Formula.parse(formula_str) for formula_str in adduct_ions_dict.keys()]
+        else:
+            assigned_list: List[AdductIon] = []
+            if isinstance(adduct_ions_dict, dict):
+                for adduct_ions_str in adduct_ions_dict.values():
+                    assigned_list.extend([
+                        AdductIon.parse(adduct_str)
+                        for adduct_str in adduct_ions_str.split(',')
+                    ])
+        for i in indices:
+            if assigned_list is not None:
+                annotate_peaks_with_formulas(
+                    dataset[i],
+                    assigned_list,
+                    mass_tolerance=mass_tolerance,
+                    coverage_column=cov_value_column,
+                    annotation_column=assign_column,
+                )
+    dataset.to_hdf5(output_file)
+
+def annotate_peaks_with_formulas(
+    spectrum: SpectrumRecord,
+    candidates: Union[List[Formula], List[AdductIon]],
     mass_tolerance: float,
-    cov_value_column: str,
-    assign_column: str,
-) -> Dict[int, List[int]]:
+    coverage_column: str,
+    annotation_column: str,
+):
     """
-    Match peaks in a SpectrumRecord to candidate formulas within a given mass tolerance.
+    Annotate peaks in a SpectrumRecord with candidate formulas/adduct ions
+    within a given mass tolerance, and compute coverage.
 
     Args:
-        spectrum_record (SpectrumRecord): Input spectrum with peaks.
-        formula_list (List[Formula]): List of candidate formulas.
+        spectrum (SpectrumRecord): Spectrum to annotate.
+        candidates (List[Formula|AdductIon]): Candidate formulas or adduct ions.
         mass_tolerance (float): Allowed absolute mass difference.
+        coverage_column (str): Column name to store coverage value.
+        annotation_column (str): Column name to store annotations per peak.
 
     Returns:
-        Dict[int, List[int]]: Mapping {peak_index: [formula_indices]} where
-            each peak index maps to the indices of formulas within tolerance.
+        List[str]: List of annotations (comma-separated candidates) for each peak.
     """
-    # [num_peaks]
-    mzs = spectrum_record.peaks.mz
-    intensities = spectrum_record.peaks.intensity
-    # [num_formulas]
-    formula_exact_mass = torch.tensor(
-        [f.exact_mass if isinstance(f, Formula) else f.mz for f in assigned_list],
+    # Peak m/z and intensity
+    mzs = spectrum.peaks.mz
+    intensities = spectrum.peaks.intensity
+
+    # Candidate exact masses
+    candidate_masses = torch.tensor(
+        [c.exact_mass if isinstance(c, Formula) else c.mz for c in candidates],
         dtype=mzs.dtype,
         device=mzs.device
     )
 
-    # Compute difference matrix: [num_peaks, num_formulas]
-    diff_matrix = torch.abs(mzs[:, None] - formula_exact_mass[None, :])
+    # Difference matrix: [n_peaks, n_candidates]
+    diff_matrix = torch.abs(mzs[:, None] - candidate_masses[None, :])
 
-    # Boolean mask for matches
+    # Boolean match mask
     match_mask = diff_matrix <= mass_tolerance
 
-    # Build result dict
-    matches = {
-        i: ','.join([str(assigned_list[j]) for j in torch.where(match_mask[i])[0].tolist()])
+    # Build peak → annotation string mapping
+    peak_matches = {
+        i: ','.join([str(candidates[j]) for j in torch.where(match_mask[i])[0].tolist()])
         for i in range(len(mzs))
         if match_mask[i].any()
     }
-    items = [matches.get(i, '') for i in range(len(mzs))]
-    spectrum_record.peaks[assign_column] = items
 
-    matched_intensities = sum(intensities[i] for i in matches.keys()).item()
+    # Annotation list aligned with all peaks
+    annotations = [peak_matches.get(i, '') for i in range(len(mzs))]
+    spectrum.peaks[annotation_column] = annotations
+
+    # Coverage calculation
     total_intensity = intensities.sum().item()
-    coverage = matched_intensities / total_intensity if total_intensity > 0 else 0.0
-    spectrum_record[cov_value_column] = coverage
-    return items
+    matched_intensity = intensities[list(peak_matches.keys())].sum().item()
+    coverage = matched_intensity / total_intensity if total_intensity > 0 else 0.0
+    spectrum[coverage_column] = coverage
+
+# python -m utils.assign.assign_formula -i data/raw/MoNA/positive/filtered_mona_positive.hdf5 -o data/raw/MoNA/positive/output_assign.hdf5 --mode PossibleFormula
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Assign formulas/adducts to MSDataset spectra")
+
+    parser.add_argument(
+        "-i", "--input_file",
+        type=str,
+        required=True,
+        help="Input HDF5 file path"
+    )
+    parser.add_argument(
+        "-o", "--output_file",
+        type=str,
+        required=True,
+        help="Output HDF5 file path"
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["PossibleFormula", "FragFormula"],
+        help="Annotation mode: PossibleFormula (no fragmenter) or FragFormula (with fragmenter)"
+    )
+    parser.add_argument(
+        "--mass_tolerance",
+        type=float,
+        default=0.01,
+        help="Mass tolerance for peak-to-formula matching (default: 0.01)"
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume mode: skip already processed spectra"
+    )
+    parser.add_argument(
+        "--timeout_seconds",
+        type=int,
+        default=10,
+        help="Timeout per SMILES for fragmentation (default: 10)"
+    )
+    parser.add_argument(
+        "--smiles_column",
+        type=str,
+        default="SMILES",
+        help="Column name containing SMILES strings (default: 'SMILES')"
+    )
+
+    args = parser.parse_args()
+
+    fragmenter = None if args.mode == "PossibleFormula" else Fragmenter(adduct_type=(AdductType.M_PLUS_H_POS,), max_depth=3)
+
+    assign_formula(
+        input_file=args.input_file,
+        output_file=args.output_file,
+        fragmenter=fragmenter,
+        mass_tolerance=args.mass_tolerance,
+        resume=args.resume,
+        timeout_seconds=args.timeout_seconds,
+        smiles_column=args.smiles_column,
+    )
