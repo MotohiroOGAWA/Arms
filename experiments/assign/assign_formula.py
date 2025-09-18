@@ -54,6 +54,7 @@ fragmenter = Fragmenter(adduct_type=(AdductType.M_PLUS_H_POS,), max_depth=8)
 
 # %%
 dataset = MSDataset.from_hdf5('/workspaces/Arms/mnt/app/data/raw/MoNA/positive/output_assign_mona_positive.hdf5')
+dataset
 
 # %%
 print(dataset[0])

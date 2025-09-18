@@ -16,6 +16,13 @@ from cores.MassEntity.MassEntityCore.MSDataset import MSDataset, SpectrumRecord
 from ..parallel.dataset_executor import *
 from ..parallel.run_parallel import *
 
+import signal
+
+class TimeoutError(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Function timed out")
 
 def _process_assign_formula_chunk(
     chunk_with_smiles: List[str],
@@ -23,29 +30,28 @@ def _process_assign_formula_chunk(
     timeout_seconds: int = 10,
 ) -> Dict[str, Union[List[AdductIon], int]]:
     results = {}
-    for smi in tqdm(chunk_with_smiles):
-    # for smi in chunk_with_smiles:
+    # for smi in tqdm(chunk_with_smiles):
+    for smi in chunk_with_smiles:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout_seconds)
         try:
-            try:
-                compound = Compound.from_smiles(smi)
-                if fragmenter is None:
-                    formula_list = get_possible_sub_formulas(compound.formula, hydrogen_delta=3)
-                    results[smi] = {str(formula): str(formula) for formula in formula_list}
-                else:
-                    tree = fragmenter.create_fragment_tree(compound, timeout_seconds=timeout_seconds)
-                    res = tree.get_all_adduct_ions()
-                    adduct_ions_str = {str(formula): ','.join([str(adduct_ion) for adduct_ion in adduct_ions]) for formula, adduct_ions in res.items()}
-                    results[smi] = adduct_ions_str
-            except TimeoutError:
-                print(f"Timeout for SMILES: {smi}")
-                results[smi] = -2
-            except Exception as e:
-                print(f"Error processing SMILES {smi}: {e}")
-                results[smi] = -1
-
+            compound = Compound.from_smiles(smi)
+            if fragmenter is None:
+                formula_list = get_possible_sub_formulas(compound.formula, hydrogen_delta=3)
+                results[smi] = {str(formula): str(formula) for formula in formula_list}
+            else:
+                tree = fragmenter.create_fragment_tree(compound, timeout_seconds=timeout_seconds)
+                res = tree.get_all_adduct_ions()
+                adduct_ions_str = {str(formula): ','.join([str(adduct_ion) for adduct_ion in adduct_ions]) for formula, adduct_ions in res.items()}
+                results[smi] = adduct_ions_str
+        except TimeoutError:
+            print(f"Timeout for SMILES: {smi}")
+            results[smi] = -2
         except Exception as e:
-            print(f"Unexpected error for SMILES {smi}: {e}")
+            print(f"Error processing SMILES {smi}: {e}")
             results[smi] = -1
+        finally:
+            signal.alarm(0)  # Disable the alarm
 
     return results
 
@@ -137,6 +143,8 @@ def assign_formula(
                     coverage_column=cov_value_column,
                     annotation_column=assign_column,
                 )
+            else:
+                dataset[i][cov_value_column] = adduct_ions_dict  # -1 or -2 for error/timeout
     dataset.to_hdf5(output_file)
 
 def annotate_peaks_with_formulas(

@@ -123,10 +123,12 @@ def merge_datasets(
         device = torch.device("cpu")
 
     # Load all datasets from HDF5
-    datasets = [MSDataset.from_hdf5(f, device=device) for f in files]
+    datasets = [MSDataset.from_hdf5(f, device=device) for f in tqdm(files, desc="Loading datasets", unit="file")]
 
     # Concatenate datasets
+    print("Merging datasets...", end="")
     merged = MSDataset.concat(datasets, device=device)
+    print("Done.")
 
     # Optionally save to file
     if save_path is not None:

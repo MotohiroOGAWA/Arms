@@ -23,7 +23,7 @@ print(f'Root: {root_dir}')
 sys.path.append(root_dir)
 
 # %%
-ion_mode = 'negative'  # 'positive' or 'negative'
+ion_mode = 'positive'  # 'positive' or 'negative'
 msp_file = get_mona_msp_file(ion_mode)
 hdf5_file = get_mona_hdf5_file(ion_mode)
 

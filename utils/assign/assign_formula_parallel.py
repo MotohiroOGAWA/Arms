@@ -7,7 +7,8 @@ from utils.parallel.dataset_executor import split_dataset, merge_datasets
 
 SCRIPT_PATH = "utils/assign/assign_formula.py"
 
-
+# python -m utils.assign.assign_formula_parallel -i data/raw/MoNA/positive/filtered_mona_positive.hdf5 -o data/raw/MoNA/positive/output_assign_mona_positive.hdf5 --mode PossibleFormula --chunk_size 100 --num_workers 1 --mass_tolerance 0.01 --timeout_seconds 10 --smiles_column Canonical 
+# python -m utils.assign.assign_formula_parallel -i data/raw/MoNA/positive/output_assign_mona_positive.hdf5 -o data/raw/MoNA/positive/output_assign2_mona_positive.hdf5 --mode FragFormula --chunk_size 100 --num_workers 50 --mass_tolerance 0.01 --timeout_seconds 10 --smiles_column Canonical 
 def main():
     parser = argparse.ArgumentParser(description="Run assign_formula in parallel on split MSDataset")
     parser.add_argument("-i", "--input_file", required=True, help="Input MSDataset HDF5 file")
