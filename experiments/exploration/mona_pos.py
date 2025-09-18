@@ -42,10 +42,10 @@ ms_dataset = ms_dataset[ms_dataset['SMILES'] != '']  # Filter out entries with e
 ms_dataset.to('cuda')
 
 # %%
-ms_dataset.peak_series._index.device
+ms_dataset.peaks._index.device
 
 # %%
-# ms_dataset.peak_series.sorted_by_intensity(ascending=False, in_place=True, method='batch')
+# ms_dataset.peaks.sorted_by_intensity(ascending=False, in_place=True, method='batch')
 
 # %%
 ms_dataset.meta_copy.head()
@@ -54,7 +54,7 @@ ms_dataset.meta_copy.head()
 ms_dataset['AdductType'].value_counts()
 
 # %%
-ms_dataset.peak_series.normalize(scale=1.0, in_place=True)
+ms_dataset.peaks.normalize(scale=1.0, in_place=True)
 
 # %%
 from cores.MassEntity.MassEntityCore.PeakCondition import *
@@ -63,13 +63,26 @@ filter_ms_dataset = ms_dataset.filter(peak_condition)
 filter_ms_dataset
 
 # %%
-filter_ms_dataset.peak_series.sort_by_mz(in_place=True)
+from cores.MassEntity.MassEntityCore.SpecCondition import *
+spec_condition = ~AllIntegerMZ() & AllowedAtomsCondition(
+    allowed_atoms={'C', 'H', 'O', 'N', 'P', 'S', 'F', 'Cl', 'Br', 'I'},
+    smiles_column='Canonical',
+    )
+filter_ms_dataset = filter_ms_dataset.filter(spec_condition)
+filter_ms_dataset
+
+# %%
+filter_ms_dataset.peaks.sort_by_mz(in_place=True)
 
 # %%
 print(filter_ms_dataset[0])
 
 # %%
 filter_ms_dataset.to_hdf5(os.path.join(os.path.dirname(hdf5_file), f'filtered_{os.path.split(hdf5_file)[-1]}'))
+
+# %%
+loaded_ms_dataset = MSDataset.from_hdf5(os.path.join(os.path.dirname(hdf5_file), f'filtered_{os.path.split(hdf5_file)[-1]}'))
+loaded_ms_dataset
 
 # %%
 sorted_ms_dataset = ms_dataset.sort_by('ExactMass')
