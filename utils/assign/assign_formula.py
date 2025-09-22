@@ -32,11 +32,11 @@ def _process_assign_formula_chunk(
     results = {}
     # for smi in tqdm(chunk_with_smiles):
     for smi in chunk_with_smiles:
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(timeout_seconds)
         try:
             compound = Compound.from_smiles(smi)
             if fragmenter is None:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
                 formula_list = get_possible_sub_formulas(compound.formula, hydrogen_delta=3)
                 results[smi] = {str(formula): str(formula) for formula in formula_list}
             else:

@@ -4,3 +4,6 @@
 [submodule "cores/MassMolKit"]
 	path = cores/MassMolKit
 	url = https://github.com/MotohiroOGAWA/MassMolKit.git
+[submodule "cores/TorchModelUtils"]
+	path = cores/TorchModelUtils
+	url = https://github.com/MotohiroOGAWA/TorchModelUtils.git

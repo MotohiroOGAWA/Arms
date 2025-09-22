@@ -53,11 +53,32 @@ dataset = MSDataset.from_hdf5(os.path.join(root_dir, 'data/raw/MoNA/positive/fil
 fragmenter = Fragmenter(adduct_type=(AdductType.M_PLUS_H_POS,), max_depth=8)
 
 # %%
-dataset = MSDataset.from_hdf5('/workspaces/Arms/mnt/app/data/raw/MoNA/positive/output_assign_mona_positive.hdf5')
+dataset = MSDataset.from_hdf5(os.path.join(root_dir, 'data/raw/MoNA/positive/output_assign2_mona_positive.hdf5'))
 dataset
 
 # %%
-print(dataset[0])
+dataset = dataset[dataset['AdductType'] == '[M+H]+']
+dataset
+
+# %%
+f_dataset = dataset[dataset['PossibleFormulaCov'] > 0.8]
+f_dataset
+
+# %%
+print(f_dataset[f_dataset['FragFormulaCov'] > 0.5][0])
+
+# %%
+ff_dataset = f_dataset[f_dataset['FragFormulaCov'] < 0.1]
+ff_dataset
+
+# %%
+print(ff_dataset[7])
+
+# %%
+print(ff_dataset[7].peaks)
+
+# %%
+f_dataset.to_hdf5(os.path.join(root_dir, 'data/raw/MoNA/positive/final_assign_mona_positive.hdf5'))
 
 # %%
 tree = fragmenter.create_fragment_tree(Compound.from_smiles(dataset[0]['Canonical']))
