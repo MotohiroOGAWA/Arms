@@ -29,23 +29,6 @@ from cores.MassEntity.MassEntityCore.MSDataset import MSDataset
 from cores.MassMolKit.Fragment.Fragmenter import Fragmenter, AdductType
 
 # %%
-from utils.assign.assign_formula import parallel_assign_formula
-
-if __name__ == "__main__":
-    dataset = MSDataset.from_hdf5(os.path.join(root_dir, 'data/raw/MoNA/positive/filtered_mona_positive.hdf5'))
-    fragmenter = Fragmenter(adduct_type=(AdductType.M_PLUS_H_POS,), max_depth=8)
-    parallel_assign_formula(
-        dataset, 
-        # fragmenter=fragmenter, 
-        fragmenter=None, 
-        mass_tolerance=0.01,
-        num_workers=1,
-        chunk_size=2,
-        smiles_column='Canonical',
-        )
-    pass
-
-# %%
 from cores.MassEntity.MassEntityCore.MSDataset import MSDataset
 from cores.MassMolKit.Fragment.Fragmenter import Fragmenter, AdductType, Compound
 
@@ -72,10 +55,12 @@ ff_dataset = f_dataset[f_dataset['FragFormulaCov'] < 0.1]
 ff_dataset
 
 # %%
-print(ff_dataset[7])
+for i in range(len(ff_dataset)):
+    print(i, ff_dataset[i]['Name'], ff_dataset[i]['Canonical'])
 
 # %%
-print(ff_dataset[7].peaks)
+
+print(ff_dataset[45].sort_by_intensity())
 
 # %%
 f_dataset.to_hdf5(os.path.join(root_dir, 'data/raw/MoNA/positive/final_assign_mona_positive.hdf5'))

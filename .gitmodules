@@ -7,3 +7,9 @@
 [submodule "cores/TorchModelUtils"]
 	path = cores/TorchModelUtils
 	url = https://github.com/MotohiroOGAWA/TorchModelUtils.git
+[submodule "arms/cores/MassEntity"]
+	path = arms/cores/MassEntity
+	url = https://github.com/MotohiroOGAWA/MassEntity.git
+[submodule "arms/cores/MassMolKit"]
+	path = arms/cores/MassMolKit
+	url = https://github.com/MotohiroOGAWA/MassMolKit.git
