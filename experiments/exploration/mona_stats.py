@@ -28,10 +28,10 @@ msp_file = get_mona_msp_file(ion_mode)
 hdf5_file = get_mona_hdf5_file(ion_mode)
 
 # %%
-from cores.MassEntity.MassEntityCore import MSDataset
-from cores.MassEntity.MassEntityIO import msp
+from arms.cores.MassEntity.msentity.core import MSDataset
+from arms.cores.MassEntity.msentity.io import msp
 
-from cores.MassMolKit.Mol.utilities import to_canonical_smiles
+from arms.cores.MassMolKit.mmkit.chem.utilities import to_canonical_smiles
 
 def canonical_map(smiles_list):
     smi_to_canonical = {}

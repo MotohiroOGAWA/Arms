@@ -28,7 +28,7 @@ mona_neg_hdf5_file = get_mona_hdf5_file('negative')
 coconut_dir, coconut_file = get_latest_coconut_dir_file()
 
 # %%
-from cores.MassEntity.MassEntityCore import MSDataset
+from arms.cores.MassEntity.msentity.core import MSDataset
 
 mona_pos_msds = MSDataset.from_hdf5(mona_pos_hdf5_file)
 mona_neg_msds = MSDataset.from_hdf5(mona_neg_hdf5_file)
