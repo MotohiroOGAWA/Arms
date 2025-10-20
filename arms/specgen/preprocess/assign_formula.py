@@ -88,6 +88,8 @@ def assign_formulas(
             dataset.peaks[calc_formula_col_name] = ''  # Initialize peak metadata column
     pbar = tqdm(total=len(dataset), desc="Assigning formulas to peaks", mininterval=1.0)
     last_save_time = time.time()
+    success_count = 0
+    progress_count = 0
 
     for spectrum_record in dataset:
         # --- Skip if already processed ---
@@ -104,8 +106,6 @@ def assign_formulas(
 
         try:
             precursor_formula = adduct.calc_formula(compound.formula)
-            if precursor_formula.exact_mass > 500:
-                continue
             possible_formulas = get_possible_sub_formulas(precursor_formula, hydrogen_delta=1)
             peaks_mz = [p.mz for p in spectrum_record.peaks]
             peak_intensities = [p.intensity for p in spectrum_record.peaks]
@@ -124,12 +124,15 @@ def assign_formulas(
 
             spectrum_record.peaks[calc_formula_col_name] = assigned_formulas
             spectrum_record[calc_formula_cov_col_name] = coverage
+            success_count += 1
 
         except Exception as e:
             print(f"Error assigning formula for spectrum: {e}")
             spectrum_record[calc_formula_cov_col_name] = -1
         finally:
             pbar.update(1)
+            progress_count += 1
+            pbar.set_postfix({"Success": f'{success_count}/{progress_count}({success_count/progress_count*100:.1f}%)'})
 
             if hdf5_output_file is not None:
                 current_time = time.time()
@@ -169,6 +172,9 @@ def assign_formulas(
 
     return dataset
 
+
+
+# python -m arms.specgen.preprocess.assign_formula data/raw/NIST/MSMS-Pos-NIST23_v20_grouped_peaks.hdf5 -tol 10.0 -tol_unit ppm -o_h5 data/raw/NIST/MSMS-Pos-NIST23_v20_assigned_formula.hdf5 -o_msp data/raw/NIST/MSMS-Pos-NIST23_v20_assigned_formula.msp -save_interval 1800 
 if __name__ == "__main__":
     import argparse
 
