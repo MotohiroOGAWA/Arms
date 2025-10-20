@@ -26,7 +26,8 @@ def assign_formulas(
         smiles_col_name:str='SMILES',
         ion_mode_col_name:str='IonMode',
         precursor_mz_col_name:str='PrecursorMZ',
-        overwrite:bool=False
+        overwrite:bool=False,
+        save_interval_sec:float=float('inf')
         ) -> MSDataset:
     if file_type is None:
         if input_file.endswith('.msp'):
@@ -57,7 +58,7 @@ def assign_formulas(
         raise ValueError(f"Precursor m/z column '{precursor_mz_col_name}' not found in dataset.")
 
     if hdf5_output_file is None and msp_output_file is None and mgf_output_file is None:
-        hdf5_output_file = derive_file_path(input_file, suffix='_grouped_peak', ext='.hdf5')
+        hdf5_output_file = derive_file_path(input_file, suffix='_assigned_formula', ext='.hdf5')
         print(f"No output file specified. Using default HDF5 output file: {hdf5_output_file}")
         if os.path.exists(hdf5_output_file) and not overwrite:
             confirm = input(f"Output file '{hdf5_output_file}' already exists. Overwrite? (y/n): ")
@@ -65,20 +66,35 @@ def assign_formulas(
                 print("Operation cancelled.")
                 return None
 
-
-    
-    if calc_formula_col_name in dataset.peaks.metadata.columns:
-        print(f"Column '{calc_formula_col_name}' already exists in peak metadata.")
-        cand_i = 1
-        col_name = f"{calc_formula_col_name}_{cand_i}"
-        while col_name in dataset.peaks.metadata.columns:
-            cand_i += 1
-            col_name = f"{calc_formula_col_name}_{cand_i}"
-        calc_formula_col_name = col_name
-        print(f"Using new column name '{calc_formula_col_name}' for calculated formulas.")
+    calc_formula_col_name = calc_formula_col_name.strip()
+    calc_formula_cov_col_name = calc_formula_col_name+'Cov'
+    # if calc_formula_cov_col_name in dataset._spectrum_meta_ref.columns:
+    #     print(f"Column '{calc_formula_cov_col_name}' already exists.")
+    #     cand_i = 1
+    #     col_name = f"{calc_formula_cov_col_name}_{cand_i}"
+    #     while col_name in dataset._spectrum_meta_ref.columns:
+    #         cand_i += 1
+    #         col_name = f"{calc_formula_cov_col_name}_{cand_i}"
+    #     calc_formula_cov_col_name = col_name
+    #     calc_formula_col_name = calc_formula_col_name+f'_{cand_i}'
+    #     print(f"Using new column name '{calc_formula_cov_col_name}' for calculated formulas.")
+    if overwrite:
+        dataset[calc_formula_cov_col_name] = ''  # Initialize the column
+        dataset.peaks[calc_formula_col_name] = ''  # Initialize peak metadata column
+    else:
+        if calc_formula_cov_col_name not in dataset.columns:
+            dataset[calc_formula_cov_col_name] = ''  # Initialize the column
+        if calc_formula_col_name not in dataset.peaks._metadata_ref.columns:
+            dataset.peaks[calc_formula_col_name] = ''  # Initialize peak metadata column
     pbar = tqdm(total=len(dataset), desc="Assigning formulas to peaks", mininterval=1.0)
+    last_save_time = time.time()
 
     for spectrum_record in dataset:
+        # --- Skip if already processed ---
+        if spectrum_record[calc_formula_cov_col_name] != '':
+            pbar.update(1)
+            continue
+
         compound_smiles = spectrum_record[smiles_col_name]
         adduct_str = spectrum_record[adduct_type_col_name]
         ion_mode = spectrum_record[ion_mode_col_name]
@@ -88,8 +104,13 @@ def assign_formulas(
 
         try:
             precursor_formula = adduct.calc_formula(compound.formula)
+            if precursor_formula.exact_mass > 500:
+                continue
             possible_formulas = get_possible_sub_formulas(precursor_formula, hydrogen_delta=1)
             peaks_mz = [p.mz for p in spectrum_record.peaks]
+            peak_intensities = [p.intensity for p in spectrum_record.peaks]
+            total_intensity = sum(peak_intensities)
+
             assigned_formula_infoes = assign_formulas_to_peaks(
                 peaks_mz=peaks_mz,
                 formula_candidates=possible_formulas,
@@ -97,13 +118,29 @@ def assign_formulas(
             )
             assigned_formulas = [','.join(info['matched_formulas']) for info in assigned_formula_infoes]
 
-            spectrum_record.peaks.metadata[calc_formula_col_name] = assigned_formulas
+            # --- coverage calculation ---
+            matched_intensity = sum(peak_intensities[idx] for idx, info in enumerate(assigned_formula_infoes) if len(info["matched_formulas"]) > 0)
+            coverage = matched_intensity / total_intensity
+
+            spectrum_record.peaks[calc_formula_col_name] = assigned_formulas
+            spectrum_record[calc_formula_cov_col_name] = coverage
 
         except Exception as e:
-            print(f"Error assigning formula for spectrum {spectrum_record['id']}: {e}")
-            continue
+            print(f"Error assigning formula for spectrum: {e}")
+            spectrum_record[calc_formula_cov_col_name] = -1
         finally:
             pbar.update(1)
+
+            if hdf5_output_file is not None:
+                current_time = time.time()
+                if current_time - last_save_time > save_interval_sec:  # Save every 'save_interval_sec' seconds
+                    try:
+                        os.makedirs(os.path.dirname(hdf5_output_file), exist_ok=True)
+                        dataset.to_hdf5(hdf5_output_file, mode='w')
+                        print(f"\nIntermediate HDF5 file saved to '{hdf5_output_file}'. ...", end='')
+                    except Exception as e:
+                        print(f"\nError saving intermediate HDF5 file: {e}")
+                    last_save_time = current_time
     pbar.close()
     
     if hdf5_output_file is not None:
@@ -210,6 +247,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Overwrite existing output files if present"
     )
+    parser.add_argument(
+        "-save_interval", "--save_interval_sec", dest="save_interval_sec",
+        type=float, default=float('inf'),
+        help="Interval in seconds for saving intermediate HDF5 results (default: no periodic saving)"
+    )
 
     args = parser.parse_args()
 
@@ -237,7 +279,8 @@ if __name__ == "__main__":
         smiles_col_name=args.smiles_col_name,
         ion_mode_col_name=args.ion_mode_col_name,
         precursor_mz_col_name=args.precursor_mz_col_name,
-        overwrite=args.overwrite
+        overwrite=args.overwrite,
+        save_interval_sec=args.save_interval_sec,
     )
 
     end_time = time.time()

@@ -10,7 +10,6 @@ from ...cores.MassEntity.msentity.core import MSDataset, PeakSeries
 from ...cores.MassEntity.msentity.io import read_msp, write_msp, read_mgf, write_mgf
 from ...cores.MassMolKit.mmkit.chem import Compound
 from ...cores.MassMolKit.mmkit.mass import Adduct, MassTolerance, PpmTolerance, DaTolerance
-from ...cores.MassMolKit.mmkit.chem.formula_utils import get_possible_sub_formulas, assign_formulas_to_peaks
 
 from ...io.utils import derive_file_path
 
