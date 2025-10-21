@@ -123,12 +123,12 @@ def assign_formulas(
             coverage = matched_intensity / total_intensity
 
             spectrum_record.peaks[calc_formula_col_name] = assigned_formulas
-            spectrum_record[calc_formula_cov_col_name] = coverage
+            spectrum_record[calc_formula_cov_col_name] = str(coverage)
             success_count += 1
 
         except Exception as e:
             print(f"Error assigning formula for spectrum: {e}")
-            spectrum_record[calc_formula_cov_col_name] = -1
+            spectrum_record[calc_formula_cov_col_name] = '-1'
         finally:
             pbar.update(1)
             progress_count += 1
@@ -140,7 +140,7 @@ def assign_formulas(
                     try:
                         os.makedirs(os.path.dirname(hdf5_output_file), exist_ok=True)
                         dataset.to_hdf5(hdf5_output_file, mode='w')
-                        print(f"\nIntermediate HDF5 file saved to '{hdf5_output_file}'. ...", end='')
+                        print(f"\nIntermediate HDF5 file saved to '{hdf5_output_file}'.")
                     except Exception as e:
                         print(f"\nError saving intermediate HDF5 file: {e}")
                     last_save_time = current_time
@@ -173,8 +173,6 @@ def assign_formulas(
     return dataset
 
 
-
-# python -m arms.specgen.preprocess.assign_formula data/raw/NIST/MSMS-Pos-NIST23_v20_grouped_peaks.hdf5 -tol 10.0 -tol_unit ppm -o_h5 data/raw/NIST/MSMS-Pos-NIST23_v20_assigned_formula.hdf5 -o_msp data/raw/NIST/MSMS-Pos-NIST23_v20_assigned_formula.msp -save_interval 1800 
 if __name__ == "__main__":
     import argparse
 
