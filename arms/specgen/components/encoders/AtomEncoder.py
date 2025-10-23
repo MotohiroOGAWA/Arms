@@ -19,7 +19,7 @@ class AtomEncoder(nn.Module):
             'hybridization': ('sp', 'sp2', 'sp3', 'sp3d', 'sp3d2'),
             'num_hydrogens': (0, 1, 2, 3, 4),
             'valence_electrons': (1, 2, 3, 4, 5, 6, 7, 8),
-            'oxidation_number': (1, 2, 3, 4, 5, 6, 7, 8, 9),
+            # 'oxidation_number': (1, 2, 3, 4, 5, 6, 7, 8, 9),
         }
         
         self.base_symbol_vector = nn.Parameter(
@@ -42,10 +42,10 @@ class AtomEncoder(nn.Module):
             torch.zeros(len(self.feature_sets['valence_electrons']), dtype=torch.float32),
             requires_grad=False
         )
-        self.base_oxidation_number_vector = nn.Parameter(
-            torch.zeros(len(self.feature_sets['oxidation_number']), dtype=torch.float32),
-            requires_grad=False
-        )
+        # self.base_oxidation_number_vector = nn.Parameter(
+        #     torch.zeros(len(self.feature_sets['oxidation_number']), dtype=torch.float32),
+        #     requires_grad=False
+        # )
 
     @property
     def feature_dim(self) -> int:
@@ -60,9 +60,9 @@ class AtomEncoder(nn.Module):
         hybridization_tensor = self.encode_hybridization(atom)
         num_hydrogens_tensor = self.encode_num_hydrogens(atom)
         valence_electrons_tensor = self.encode_valence_electrons(atom)
-        oxidation_number_tensor = self.encode_oxidation_number(atom)
+        # oxidation_number_tensor = self.encode_oxidation_number(atom)
 
-        return torch.cat([symbol_tensor, ring_type_tensor, hybridization_tensor, num_hydrogens_tensor, valence_electrons_tensor, oxidation_number_tensor], dim=0)
+        return torch.cat([symbol_tensor, ring_type_tensor, hybridization_tensor, num_hydrogens_tensor, valence_electrons_tensor], dim=0)
 
 
     def encode_symbol(self, atom: Chem.rdchem.Atom) -> torch.Tensor:
@@ -83,11 +83,11 @@ class AtomEncoder(nn.Module):
         ring_types = self.feature_sets['ring_type']
         if not atom.IsInRing():
             one_hot[ring_types.index('no-ring')] = 1.0
-        elif atom.IsInSmallRing():
+        elif atom.IsInRingSize(3) or atom.IsInRingSize(4):
             one_hot[ring_types.index('small-ring')] = 1.0
-        elif atom.IsInRingOfSize(5):
+        elif atom.IsInRingSize(5):
             one_hot[ring_types.index('5-cycle')] = 1.0
-        elif atom.IsInRingOfSize(6):
+        elif atom.IsInRingSize(6):
             one_hot[ring_types.index('6-cycle')] = 1.0
         else:
             one_hot[ring_types.index('large-ring')] = 1.0
@@ -115,11 +115,11 @@ class AtomEncoder(nn.Module):
             one_hot[self.feature_sets['valence_electrons'].index(num_valence)] = 1.0
         return one_hot
     
-    def encode_oxidation_number(self, atom: Chem.rdchem.Atom) -> torch.Tensor:
-        ox_num = Chem.rdMolDescriptors.CalcOxidationNumbers(atom)
-        one_hot = self.base_oxidation_number_vector.clone()
-        if ox_num in self.feature_sets['oxidation_number']:
-            one_hot[self.feature_sets['oxidation_number'].index(ox_num)] = 1.0
-        return one_hot
+    # def encode_oxidation_number(self, atom: Chem.rdchem.Atom) -> torch.Tensor:
+    #     ox_num = Chem.rdMolDescriptors.CalcOxidationNumbers(atom)
+    #     one_hot = self.base_oxidation_number_vector.clone()
+    #     if ox_num in self.feature_sets['oxidation_number']:
+    #         one_hot[self.feature_sets['oxidation_number'].index(ox_num)] = 1.0
+    #     return one_hot
 
     

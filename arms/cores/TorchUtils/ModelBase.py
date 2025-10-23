@@ -5,6 +5,23 @@ import inspect
 import yaml
 
 class ModelBase(nn.Module):
+    """
+    Base class for PyTorch models that automatically records constructor arguments.
+
+    ---------------------------------------------------------------
+    **How to inherit correctly**
+    ---------------------------------------------------------------
+    When you define a subclass, make sure to call super().__init__ like this:
+
+        super(SubClass, self).__init__(
+            ignore_config_keys=[],
+            **{k: v for k, v in locals().items() if k != 'self'}
+        )
+
+    This ensures all __init__ arguments are automatically registered
+    as instance attributes for config management and reproducibility.
+    ---------------------------------------------------------------
+    """
     def __init__(self, ignore_config_keys=None, **kwargs):
         super(ModelBase, self).__init__()
         self._ignore_config_keys = ['self', '_ignore_config_keys', '__class__']

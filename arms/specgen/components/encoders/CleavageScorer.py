@@ -1,47 +1,50 @@
 from typing import Tuple
 import torch
 import torch.nn as nn
+from torch_geometric.data import Data
 
 from ....cores.MassMolKit.mmkit.fragment.CleavagePatternLibrary import CleavagePatternLibrary, CleavagePattern
 from ....cores.MassMolKit.mmkit.chem import Compound
+from ....cores.TorchUtils.ModelBase import ModelBase
 
 from .CleavageEncoder import CleavageEncoder
 
-class CleavageScorer(nn.Module):
-    
+class CleavageScorer(ModelBase):
     def __init__(self,
-                 cleavage_pattern_lib: CleavagePatternLibrary,
+                 cleavage_pattern_lib_dict: dict,
                  cleavage_dim: int,
                  atom_dim: int,
-                 mol_dim: int,
                  cleavage_fc_dims:Tuple[int],
-                 cleavage_mol_fc_dims:Tuple[int],
                  dropout: float,
                  ):
-        super(CleavageScorer, self).__init__()
-
-        self.cleavage_pattern_lib = cleavage_pattern_lib
+        super(CleavageScorer, self).__init__(
+            ignore_config_keys=['cleavage_pattern_lib'],
+            **{k: v for k, v in locals().items() if k != 'self'}
+        )
+        self.cleavage_pattern_lib = CleavagePatternLibrary.from_dict(cleavage_pattern_lib_dict)
         
+        self.cleavage_key_to_label = {
+            cleavage_pattern.key(): f'Cleave_{i}'
+            for i, cleavage_pattern in enumerate(self.cleavage_pattern_lib.patterns)
+        }
         self.cleavage_patterns = {
-            cleavage_pattern.key(): cleavage_pattern
-            for cleavage_pattern in cleavage_pattern_lib.patterns
+            self.cleavage_key_to_label[cleavage_pattern.key()]: cleavage_pattern
+            for cleavage_pattern in self.cleavage_pattern_lib.patterns
         }
         self.cleavage_encoders = nn.ModuleDict({
-            cleavage_pattern.key(): CleavageEncoder(
+            self.cleavage_key_to_label[cleavage_pattern.key()]: CleavageEncoder(
                 cleavage_pattern=cleavage_pattern,
                 cleavage_dim=cleavage_dim,
                 atom_dim=atom_dim,
                 fc_dims=cleavage_fc_dims,
-                mol_dim=mol_dim,
-                mol_fc_dims=cleavage_mol_fc_dims,
                 dropout=dropout,
             )
-            for cleavage_pattern in cleavage_pattern_lib.patterns
+            for cleavage_pattern in self.cleavage_pattern_lib.patterns
         })
 
     def calc_cleavage_score(
             self,
-            mol_graph,
+            mol_graph: Data,
         ) -> torch.Tensor:
         """
         Calculate cleavage likelihood scores for all registered cleavage patterns.
@@ -68,10 +71,9 @@ class CleavageScorer(nn.Module):
             compound = mol_graph.compound
 
         atom_feats = mol_graph.x  # [N_atoms, atom_dim]
-        
-        for cleavage_pattern_key in self.cleavage_pattern_lib.patterns:
-            cleavage_pattern = self.cleavage_patterns[cleavage_pattern_key]
-            cleavage_encoder = self.cleavage_encoders[cleavage_pattern_key]
+
+        for label, cleavage_pattern in self.cleavage_patterns.items():
+            cleavage_encoder = self.cleavage_encoders[label]
 
             if not cleavage_pattern.exists(compound):
                 continue  # Skip patterns that do not exist in the compound
@@ -82,11 +84,6 @@ class CleavageScorer(nn.Module):
                 reactant_atom_feats = atom_feats[reactant_atom_indices]  # [num_reactant_atoms, atom_dim]
                 
                 cleavage_feat = cleavage_encoder(reactant_atom_feats)  # [cleavage_dim]
-                
-                mol_feat = cleavage_encoder.predict_mol_features(cleavage_feat)  # [mol_dim]
-                
-                # Here you can implement how to aggregate mol_feat into a final score
-                # For simplicity, let's just print the mol_feat for now
-                print(f"Cleavage pattern: {cleavage_pattern_key}, Mol feature: {mol_feat}")
+                pass
             
 

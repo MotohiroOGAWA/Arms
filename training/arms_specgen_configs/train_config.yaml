@@ -1,0 +1,27 @@
+load_name: 'experiments_v00'
+ckpt_id: null
+batch_size: 2
+device: 'cuda'
+epoch: 100
+save_interval: 10
+
+optimizer:
+  name: 'adam'
+  lr: 0.001
+  eps: 0.0000001
+
+  scheduler:
+    # name: null
+    
+    name: 'ReduceLROnPlateau' # if null, do not use scheduler
+    min: 1e-7
+    factor: 0.8
+    patience: 500
+
+early_stopping:
+  patience: 1000 # if null, do not use early stopping
+  window_size: 10
+  min_delta: 0.0001
+  reset_step: 0.01
+
+train_mode: 'train' # 'train', 'train_m15', 'train_m1'

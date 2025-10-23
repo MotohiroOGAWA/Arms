@@ -23,7 +23,7 @@ class MolEncoder(nn.Module):
 
     def __init__(
             self,
-            symbols:Tuple[str]=('C', 'N', 'O', 'P', 'S', 'F', 'Cl', 'Br', 'I'),
+            symbols,
             ):
         super(MolEncoder, self).__init__()
 

@@ -1,0 +1,9 @@
+train_dataset_path: data/raw/NIST/FragmentPathway_NIST23_MSMS_Pos.hdf5
+cleavage_pattern_lib_path: arms/cores/MassMolKit/mmkit/fragment/cleavage_patterns/pos/default.json
+smiles_col_name: 'SMILES'
+adduct_col_name: 'AdductType'
+train_size: 0.8
+val_size: 0.1
+test_size: 0.1
+
+overwrite: false
