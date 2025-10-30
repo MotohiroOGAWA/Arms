@@ -1,11 +1,14 @@
 import os
+import sys
 from typing import List, Tuple
 from collections import defaultdict
+from itertools import islice
 from tqdm import tqdm
 import torch
 import pandas as pd
 import time
 
+from arms.utils.run_parallel import *
 from ...io.utils import derive_file_path
 from ...cores.MassEntity.msentity.core import MSDataset, PeakSeries
 from ...cores.MassEntity.msentity.io import read_msp, write_msp, read_mgf, write_mgf
@@ -23,23 +26,8 @@ from ...cores.MassMolKit.mmkit.mass.Adduct import Adduct
 from ...cores.MassMolKit.mmkit.mass.Tolerance import PpmTolerance, DaTolerance
 from ...cores.MassMolKit.mmkit.chem.formula_utils import get_isotopic_masses
 
-def assign_fragment_pathways(
-        input_file:str, 
-        max_depth:int,
-        mass_tolerance:MassTolerance,
-        timeout_seconds:float=float('inf'),
-        file_type:str=None, 
-        hdf5_output_file:str=None,
-        msp_output_file:str=None,
-        mgf_output_file:str=None,
-        pathway_col_name:str='FragmentPathway',
-        adduct_type_col_name:str='AdductType', 
-        smiles_col_name:str='SMILES',
-        ion_mode_col_name:str='IonMode',
-        precursor_mz_col_name:str='PrecursorMZ',
-        overwrite:bool=False,
-        save_interval_sec:float=float('inf')
-) -> MSDataset:
+
+def _prepare_dataset_io(input_file:str, file_type:str=None, hdf5_output_file:str=None, msp_output_file:str=None, mgf_output_file:str=None, overwrite:bool=False) -> Tuple[str, MSDataset, str, str, str]:
     if file_type is None:
         if input_file.endswith('.msp'):
             file_type = 'msp'
@@ -59,15 +47,6 @@ def assign_fragment_pathways(
     else:
         raise ValueError("Unsupported file type. Use 'msp' or 'mgf'.")
     
-    if adduct_type_col_name not in dataset.columns:
-        raise ValueError(f"Adduct type column '{adduct_type_col_name}' not found in dataset.")
-    if smiles_col_name not in dataset.columns:
-        raise ValueError(f"SMILES column '{smiles_col_name}' not found in dataset.")
-    if ion_mode_col_name not in dataset.columns:
-        raise ValueError(f"Ion mode column '{ion_mode_col_name}' not found in dataset.")
-    if precursor_mz_col_name not in dataset.columns:
-        raise ValueError(f"Precursor m/z column '{precursor_mz_col_name}' not found in dataset.")
-
     if hdf5_output_file is None and msp_output_file is None and mgf_output_file is None:
         hdf5_output_file = derive_file_path(input_file, suffix='_assigned_formula', ext='.hdf5')
         print(f"No output file specified. Using default HDF5 output file: {hdf5_output_file}")
@@ -76,6 +55,42 @@ def assign_fragment_pathways(
             if confirm.lower() != 'y':
                 print("Operation cancelled.")
                 return None
+    return file_type, dataset, hdf5_output_file, msp_output_file, mgf_output_file
+
+def assign_fragment_pathways(
+        input_file:str, 
+        max_depth:int,
+        mass_tolerance:MassTolerance,
+        timeout_seconds:float=float('inf'),
+        file_type:str=None, 
+        hdf5_output_file:str=None,
+        msp_output_file:str=None,
+        mgf_output_file:str=None,
+        pathway_col_name:str='FragmentPathway',
+        adduct_type_col_name:str='AdductType', 
+        smiles_col_name:str='SMILES',
+        ion_mode_col_name:str='IonMode',
+        precursor_mz_col_name:str='PrecursorMZ',
+        overwrite:bool=False,
+        save_interval_sec:float=float('inf')
+) -> MSDataset:
+    file_type, dataset, hdf5_output_file, msp_output_file, mgf_output_file = _prepare_dataset_io(
+        input_file=input_file,
+        file_type=file_type,
+        hdf5_output_file=hdf5_output_file,
+        msp_output_file=msp_output_file,
+        mgf_output_file=mgf_output_file,
+        overwrite=overwrite
+    )
+
+    if adduct_type_col_name not in dataset.columns:
+        raise ValueError(f"Adduct type column '{adduct_type_col_name}' not found in dataset.")
+    if smiles_col_name not in dataset.columns:
+        raise ValueError(f"SMILES column '{smiles_col_name}' not found in dataset.")
+    if ion_mode_col_name not in dataset.columns:
+        raise ValueError(f"Ion mode column '{ion_mode_col_name}' not found in dataset.")
+    if precursor_mz_col_name not in dataset.columns:
+        raise ValueError(f"Precursor m/z column '{precursor_mz_col_name}' not found in dataset.")
             
     pathway_col_name = pathway_col_name.strip()
     pathway_cov_col_name = pathway_col_name + 'Cov'
@@ -94,7 +109,7 @@ def assign_fragment_pathways(
     smiles_index_map = dataset.meta.groupby(smiles_col_name).apply(lambda x: x.index.tolist()).to_dict()
     print("done.")
 
-    pbar = tqdm(total=len(dataset), desc="Assigning formulas to peaks", mininterval=1.0)
+    pbar = tqdm(total=len(dataset), desc="Assigning fragment pathway to peaks", mininterval=1.0)
     last_save_time = time.time()
     success_count = 0
     progress_count = 0
@@ -239,6 +254,116 @@ def assign_fragment_pathways(
 
     return dataset
 
+def parallel_assign_fragment_pathways(
+        executable:str, 
+        argv:list[str], 
+        num_workers:int, 
+        chunk_size:int,
+        
+        input_file:str, 
+        file_type:str=None, 
+        hdf5_output_file:str=None,
+        msp_output_file:str=None,
+        mgf_output_file:str=None,
+        overwrite:bool=False,
+
+        smiles_col_name:str='SMILES',
+        ) -> None:
+    file_type, dataset, hdf5_output_file, msp_output_file, mgf_output_file = _prepare_dataset_io(
+        input_file=input_file,
+        file_type=file_type,
+        hdf5_output_file=hdf5_output_file,
+        msp_output_file=msp_output_file,
+        mgf_output_file=mgf_output_file,
+        overwrite=overwrite
+    )
+    
+    if smiles_col_name not in dataset.columns:
+        raise ValueError(f"SMILES column '{smiles_col_name}' not found in dataset.")
+
+    print("Creating Chunks by SMILES...")
+    smiles_index_map = dataset.meta.groupby(smiles_col_name).apply(lambda x: x.index.tolist()).to_dict()
+    iterator = iter(smiles_index_map.items())
+    smiles_chunks:List[List[int]] = []
+    while True:
+        part = list(islice(iterator, chunk_size))
+        if not part:
+            break
+        smiles_chunks.append([i for _, sub in part for i in sub])
+    print(f"Split into {len(smiles_chunks)} chunks (chunk size = {chunk_size})")
+
+    base_dir = os.path.dirname(hdf5_output_file)
+    temp_dir = os.path.join(base_dir, os.path.splitext(os.path.basename(hdf5_output_file))[0] + '_temp_parallel_assign_fragment_pathways')
+    os.makedirs(temp_dir, exist_ok=True)
+
+    parallel_infoes = []
+    pbar = tqdm(total=len(smiles_chunks), desc="Preparing parallel tasks", mininterval=1.0)
+    for i, indices in enumerate(smiles_chunks):
+        temp_input = os.path.join(temp_dir, f"part_{i}.hdf5")
+        temp_output = os.path.join(temp_dir, f"part_{i}_done.hdf5")
+        
+        subset = dataset[indices]
+
+        cmd_args = argv.copy()
+        cmd_args[cmd_args.index(input_file)] = temp_input # Update input file
+
+        def replace_arg(flag_name: str, new_value: str):
+            if flag_name in cmd_args:
+                idx = cmd_args.index(flag_name)
+                cmd_args[idx + 1] = new_value
+
+        def delete_arg(flag_name: str):
+            if flag_name in cmd_args:
+                idx = cmd_args.index(flag_name)
+                cmd_args.pop(idx)
+                if len(cmd_args) > idx and not cmd_args[idx].startswith('-'):
+                    cmd_args.pop(idx)  # Remove value only if next arg is not another flag
+
+        replace_arg("-o_h5", temp_output)
+        replace_arg("--hdf5_output_file", temp_output)
+        delete_arg("-o_msp")
+        delete_arg("--msp_output_file")
+        delete_arg("-o_mgf")
+        delete_arg("--mgf_output_file")
+        delete_arg("-ftype")
+        delete_arg("--file_type")
+        replace_arg("--num_workers", "1")
+        replace_arg("-n_workers", "1")
+
+        commands = [executable, "-m", "arms.specgen.preprocess.assign_fragment_pathway"] + cmd_args[1:]
+        
+        subset.to_hdf5(temp_input, mode='w')
+
+        parallel_infoes.append({
+            "commands": commands,
+            "temp_input": temp_input,
+            "temp_output": temp_output,
+        })
+        pbar.update(1)
+    pbar.close()
+
+    commands_list = [info["commands"] for info in parallel_infoes]
+    run_parallel_subprocesses(commands_list=commands_list, max_workers=num_workers)
+
+    print("Merging chunk results...")
+    output_datasets = []
+    for info in parallel_infoes:
+        output_dataset = MSDataset.from_hdf5(info["temp_output"])
+        output_datasets.append(output_dataset)
+    merged_dataset = MSDataset.concat(output_datasets)
+    print("Saving merged results...")
+    if hdf5_output_file is not None:
+        print(f"Merged HDF5 file saved to '{hdf5_output_file}'", end="...")
+        merged_dataset.to_hdf5(hdf5_output_file, mode='w')
+        print("done.")
+    if msp_output_file is not None:
+        print(f"Merged MSP file saved to '{msp_output_file}'", end="...")
+        write_msp(merged_dataset, msp_output_file)
+        print("done.")
+    if mgf_output_file is not None:
+        write_mgf(merged_dataset, mgf_output_file)
+        print(f"Merged MGF file saved to '{mgf_output_file}'", end="...")
+        print("done.")
 
 if __name__ == "__main__":
     import argparse
@@ -336,37 +461,71 @@ if __name__ == "__main__":
         help="Interval in seconds for saving intermediate HDF5 results (default: no periodic saving)"
     )
 
-    args = parser.parse_args()
-
-    # --- Initialize tolerance ---
-    if args.tolerance_unit.lower() == "ppm":
-        mass_tolerance = PpmTolerance(args.tolerance_value)
-    elif args.tolerance_unit.lower() == "da":
-        mass_tolerance = DaTolerance(args.tolerance_value)
-    else:
-        raise ValueError(f"Unsupported tolerance unit: {args.tolerance_unit}")
-
-    # --- Run process ---
-    start_time = time.time()
-    print("Starting fragment pathway assignment process...\n")
-
-    dataset = assign_fragment_pathways(
-        input_file=args.input_file,
-        max_depth=args.max_depth,
-        mass_tolerance=mass_tolerance,
-        timeout_seconds=args.timeout_seconds,
-        file_type=args.file_type,
-        hdf5_output_file=args.hdf5_output_file,
-        msp_output_file=args.msp_output_file,
-        mgf_output_file=args.mgf_output_file,
-        pathway_col_name=args.fragment_pathway_col_name,
-        adduct_type_col_name=args.adduct_type_col_name,
-        smiles_col_name=args.smiles_col_name,
-        ion_mode_col_name=args.ion_mode_col_name,
-        precursor_mz_col_name=args.precursor_mz_col_name,
-        overwrite=args.overwrite,
-        save_interval_sec=args.save_interval_sec,
+    # --- Parallel processing ---
+    parser.add_argument(
+        "--num_workers", "-n_workers", dest="num_workers",
+        type=int, default=1,
+        help="Number of parallel workers (default: 1)"
+    )
+    parser.add_argument(
+        "--chunk_size", "-chunk_size", dest="chunk_size",
+        type=int, default=-1,
+        help="Number of spectra per chunk for parallel processing (default: -1 for no chunking)"
     )
 
-    end_time = time.time()
-    print(f"\nCompleted in {end_time - start_time:.2f} seconds.")
+    args = parser.parse_args()
+
+    if args.num_workers > 1:
+        if args.chunk_size <= 0:
+            print("Error: --chunk_size must be a positive integer when using multiple workers.", file=sys.stderr)
+            sys.exit(1)
+        executable = sys.executable
+        argv = sys.argv
+        parallel_assign_fragment_pathways(
+            executable=executable,
+            argv=argv,
+            num_workers=args.num_workers,
+            chunk_size=args.chunk_size,
+
+            input_file=args.input_file,
+            file_type=args.file_type,
+            hdf5_output_file=args.hdf5_output_file,
+            msp_output_file=args.msp_output_file,
+            mgf_output_file=args.mgf_output_file,
+            overwrite=args.overwrite,
+
+            smiles_col_name=args.smiles_col_name,
+        )
+    else:
+        # --- Initialize tolerance ---
+        if args.tolerance_unit.lower() == "ppm":
+            mass_tolerance = PpmTolerance(args.tolerance_value)
+        elif args.tolerance_unit.lower() == "da":
+            mass_tolerance = DaTolerance(args.tolerance_value)
+        else:
+            raise ValueError(f"Unsupported tolerance unit: {args.tolerance_unit}")
+
+        # --- Run process ---
+        start_time = time.time()
+        print("Starting fragment pathway assignment process...\n")
+
+        dataset = assign_fragment_pathways(
+            input_file=args.input_file,
+            max_depth=args.max_depth,
+            mass_tolerance=mass_tolerance,
+            timeout_seconds=args.timeout_seconds,
+            file_type=args.file_type,
+            hdf5_output_file=args.hdf5_output_file,
+            msp_output_file=args.msp_output_file,
+            mgf_output_file=args.mgf_output_file,
+            pathway_col_name=args.fragment_pathway_col_name,
+            adduct_type_col_name=args.adduct_type_col_name,
+            smiles_col_name=args.smiles_col_name,
+            ion_mode_col_name=args.ion_mode_col_name,
+            precursor_mz_col_name=args.precursor_mz_col_name,
+            overwrite=args.overwrite,
+            save_interval_sec=args.save_interval_sec,
+        )
+
+        end_time = time.time()
+        print(f"\nCompleted in {end_time - start_time:.2f} seconds.")
