@@ -79,7 +79,7 @@ def collect_peaks_by_condition(
     offsets = [0]
     peak_metadata   = defaultdict(list)
 
-    pbar = tqdm(total=len(record_groups), desc="Merging records by precursor ion", mininterval=1.0)
+    pbar = tqdm(total=len(record_groups), desc="Merging by precursor ion", mininterval=1.0)
 
     for group_key, record_indices in record_groups.items():
         compound_smiles, adduct_str, ion_mode = group_key
@@ -95,6 +95,9 @@ def collect_peaks_by_condition(
         spectrum_metadata['Formula'].append(compound.formula.plain)
         spectrum_metadata['GroupedRecordIndices'].append(','.join(map(str, record_indices)))
         spectrum_metadata['NumSpectraInGroup'].append(len(record_indices))
+        if 'SpecID' in dataset.columns:
+            spec_ids = [f"{idx}:{dataset[idx]['SpecID']}" for idx in record_indices]
+            spectrum_metadata['GroupedSpecIDs'].append(','.join(spec_ids))
 
         offset = offsets[-1]
         for spec_idx, merged_peak in enumerate(merged_peaks):
@@ -155,7 +158,7 @@ def _group_compound_adduct(
         mass_tolerance: MassTolerance,
     ) -> Tuple[dict, dict]:
 
-    pbar = tqdm(total=len(dataset), desc="Grouping records by smiles and adduct", mininterval=1.0)
+    pbar = tqdm(total=len(dataset), desc="Grouping by smiles and adduct", mininterval=1.0)
     success_count = 0
     progress_count = 0
     record_groups:dict[(Compound,Adduct), list[int]] = defaultdict(list)

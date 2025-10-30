@@ -10,7 +10,7 @@ from ...cores.MassEntity.msentity.core import MSDataset, PeakSeries
 from ...cores.MassEntity.msentity.io import read_msp, write_msp, read_mgf, write_mgf
 from ...cores.MassMolKit.mmkit.chem import Compound
 from ...cores.MassMolKit.mmkit.mass import Adduct, MassTolerance, PpmTolerance, DaTolerance
-from ...cores.MassMolKit.mmkit.chem.formula_utils import get_possible_sub_formulas, assign_formulas_to_peaks
+from ...cores.MassMolKit.mmkit.chem.formula_utils import get_possible_sub_formulas, assign_formulas_to_peaks, Formula
 
 from ...io.utils import derive_file_path
 
@@ -86,64 +86,88 @@ def assign_formulas(
             dataset[calc_formula_cov_col_name] = ''  # Initialize the column
         if calc_formula_col_name not in dataset.peaks._metadata_ref.columns:
             dataset.peaks[calc_formula_col_name] = ''  # Initialize peak metadata column
-    pbar = tqdm(total=len(dataset), desc="Assigning formulas to peaks", mininterval=1.0)
-    last_save_time = time.time()
+
+    pbar = tqdm(total=len(dataset), desc="Grouping by precursor formula", mininterval=1.0)
+    precursor_formula_groups = defaultdict(list)
     success_count = 0
     progress_count = 0
-
-    for spectrum_record in dataset:
-        # --- Skip if already processed ---
-        if spectrum_record[calc_formula_cov_col_name] != '':
-            pbar.update(1)
-            continue
-
-        compound_smiles = spectrum_record[smiles_col_name]
-        adduct_str = spectrum_record[adduct_type_col_name]
-        ion_mode = spectrum_record[ion_mode_col_name]
-        precursor_mz = float(spectrum_record[precursor_mz_col_name])
-        compound = Compound.from_smiles(compound_smiles)
-        adduct = Adduct.parse(adduct_str)
-
+    for idx, spectrum_record in enumerate(dataset):
         try:
+            compound_smiles = spectrum_record[smiles_col_name]
+            adduct_str = spectrum_record[adduct_type_col_name]
+            ion_mode = spectrum_record[ion_mode_col_name]
+            precursor_mz = float(spectrum_record[precursor_mz_col_name])
+            compound = Compound.from_smiles(compound_smiles)
+            adduct = Adduct.parse(adduct_str)
             precursor_formula = adduct.calc_formula(compound.formula)
-            possible_formulas = get_possible_sub_formulas(precursor_formula, hydrogen_delta=1)
-            peaks_mz = [p.mz for p in spectrum_record.peaks]
-            peak_intensities = [p.intensity for p in spectrum_record.peaks]
-            total_intensity = sum(peak_intensities)
-
-            assigned_formula_infoes = assign_formulas_to_peaks(
-                peaks_mz=peaks_mz,
-                formula_candidates=possible_formulas,
-                mass_tolerance=mass_tolerance
-            )
-            assigned_formulas = [','.join(info['matched_formulas']) for info in assigned_formula_infoes]
-
-            # --- coverage calculation ---
-            matched_intensity = sum(peak_intensities[idx] for idx, info in enumerate(assigned_formula_infoes) if len(info["matched_formulas"]) > 0)
-            coverage = matched_intensity / total_intensity
-
-            spectrum_record.peaks[calc_formula_col_name] = assigned_formulas
-            spectrum_record[calc_formula_cov_col_name] = str(coverage)
-            success_count += 1
-
+            calc_precursor_mz = adduct.calc_mz(compound.exact_mass)
+            if mass_tolerance.within(calc_precursor_mz, precursor_mz):
+                precursor_formula_groups[precursor_formula.value].append(idx)
+                success_count += 1
+            else:
+                print(f"Warning: Precursor m/z {precursor_mz} not within tolerance for adduct '{adduct_str}' and formula '{compound.formula.plain}'")
         except Exception as e:
-            print(f"Error assigning formula for spectrum: {e}")
-            spectrum_record[calc_formula_cov_col_name] = '-1'
+            spectrum_record[calc_formula_cov_col_name] = f"PrecursorMZ mismatch: calc {calc_precursor_mz}"
+            print(f"Error processing spectrum index {idx}: {e}")
         finally:
             pbar.update(1)
             progress_count += 1
             pbar.set_postfix({"Success": f'{success_count}/{progress_count}({success_count/progress_count*100:.1f}%)'})
+    pbar.close()
 
-            if hdf5_output_file is not None:
-                current_time = time.time()
-                if current_time - last_save_time > save_interval_sec:  # Save every 'save_interval_sec' seconds
-                    try:
-                        os.makedirs(os.path.dirname(hdf5_output_file), exist_ok=True)
-                        dataset.to_hdf5(hdf5_output_file, mode='w')
-                        print(f"\nIntermediate HDF5 file saved to '{hdf5_output_file}'.")
-                    except Exception as e:
-                        print(f"\nError saving intermediate HDF5 file: {e}")
-                    last_save_time = current_time
+
+    pbar = tqdm(total=len(dataset), desc="Assigning formulas to peaks", mininterval=1.0)
+    last_save_time = time.time()
+    success_count = 0
+    progress_count = 0
+    for precursor_formula_value, record_indices in precursor_formula_groups.items():
+        precursor_formula = Formula.parse(precursor_formula_value)
+        possible_formulas = None
+        for idx in record_indices:
+            try:
+                spectrum_record = dataset[idx]
+                # --- Skip if already processed ---
+                if spectrum_record[calc_formula_cov_col_name] != '':
+                    continue
+                if possible_formulas is None:
+                    possible_formulas = get_possible_sub_formulas(precursor_formula, hydrogen_delta=1)
+                peaks_mz = [p.mz for p in spectrum_record.peaks]
+                peak_intensities = [p.intensity for p in spectrum_record.peaks]
+                total_intensity = sum(peak_intensities)
+
+                assigned_formula_infoes = assign_formulas_to_peaks(
+                    peaks_mz=peaks_mz,
+                    formula_candidates=possible_formulas,
+                    mass_tolerance=mass_tolerance
+                )
+                assigned_formulas = [','.join(info['matched_formulas']) for info in assigned_formula_infoes]
+
+                # --- coverage calculation ---
+                matched_intensity = sum(peak_intensities[idx] for idx, info in enumerate(assigned_formula_infoes) if len(info["matched_formulas"]) > 0)
+                coverage = matched_intensity / total_intensity
+
+                spectrum_record.peaks[calc_formula_col_name] = assigned_formulas
+                spectrum_record[calc_formula_cov_col_name] = str(coverage)
+                success_count += 1
+
+            except Exception as e:
+                print(f"Error assigning formula for spectrum: {e}")
+                spectrum_record[calc_formula_cov_col_name] = 'ErrorAssigningFormula'
+            finally:
+                pbar.update(1)
+                progress_count += 1
+                pbar.set_postfix({"Success": f'{success_count}/{progress_count}({success_count/progress_count*100:.1f}%)'})
+
+                if hdf5_output_file is not None:
+                    current_time = time.time()
+                    if current_time - last_save_time > save_interval_sec:  # Save every 'save_interval_sec' seconds
+                        try:
+                            os.makedirs(os.path.dirname(hdf5_output_file), exist_ok=True)
+                            dataset.to_hdf5(hdf5_output_file, mode='w')
+                            print(f"\nIntermediate HDF5 file saved to '{hdf5_output_file}'.")
+                        except Exception as e:
+                            print(f"\nError saving intermediate HDF5 file: {e}")
+                        last_save_time = current_time
     pbar.close()
     
     if hdf5_output_file is not None:
